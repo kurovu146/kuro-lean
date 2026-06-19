@@ -1,0 +1,7 @@
+ RUN  v1.6.0 /Users/kuro/Dev/app
+ ✓ src/a.test.ts (3)
+ FAIL  src/b.test.ts > tính tổng
+AssertionError: expected 4 to be 5
+ ❯ src/b.test.ts:12:20
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 7 passed (8)

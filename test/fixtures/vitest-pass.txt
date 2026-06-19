@@ -1,0 +1,7 @@
+ RUN  v1.6.0 /Users/kuro/Dev/app
+ ✓ src/a.test.ts (3)
+ ✓ src/b.test.ts (5)
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  10:00:00
+   Duration  1.20s
