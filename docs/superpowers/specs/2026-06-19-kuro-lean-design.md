@@ -127,10 +127,12 @@ kuro-lean/
 - Tự dọn: giữ tối đa N file gần nhất (config, mặc định 50).
 
 ### 4.5 `statusline.ts`
-- Claude Code statusline truyền JSON qua stdin (chứa `transcript_path`, `model`, …).
-- Đọc transcript JSONL → tính token đã dùng & % so với context window của model hiện tại.
-- Output 1 dòng: `🟢 42% ctx · ~84k tok · $0.31` — ngưỡng màu 🟢<60% / 🟡<85% / 🔴≥85% (configurable).
-- Đọc số thật từ JSONL; nếu thiếu field → degrade gọn (`~? ctx`), không crash.
+- Claude Code statusline truyền JSON qua stdin có sẵn object `context_window`
+  (`used_percentage`, `total_input_tokens`, `total_output_tokens`, `context_window_size`),
+  `model.display_name`, và `cost.total_cost_usd`. **Không cần parse transcript JSONL.**
+- Output 1 dòng: `🟢 42% ctx · ~84k tok · $0.31` — ngưỡng màu 🟢<warnPct / 🟡<dangerPct / 🔴≥dangerPct (configurable).
+- Token = `total_input_tokens + total_output_tokens`; %  ưu tiên `used_percentage`, fallback tự tính.
+- Thiếu field → degrade gọn (`~? ctx`), không crash.
 
 ### 4.6 `hooks/compress.ts` (PreToolUse, matcher: Bash)
 - Đọc hook input JSON (stdin) → lấy `tool_input.command`.
