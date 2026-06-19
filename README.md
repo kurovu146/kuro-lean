@@ -19,7 +19,7 @@ kt doctor           # kiểm tra
 ## Subcommand
 - `kt run -- <cmd>`  chạy lệnh, in bản nén, lưu full
 - `kt show [id]`     xem full log
-- `kt status`        statusline (đọc JSON stdin)
+- `kt status`        statusline 2 dòng (đọc JSON stdin): `🟢 model (ctx) · bar % · ~tok · $cost` / `📁 dir · 🌿 branch ↑↓ · 📝 +/- · 🔧 tools`
 - `kt init` / `kt doctor`
 
 

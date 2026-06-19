@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { runAndCompress } from "./pipeline";
-import { renderStatusline, type StatuslineInput } from "./statusline";
+import { renderStatusline, collectExtras, type StatuslineInput } from "./statusline";
 import { showRun } from "./store";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard } from "./hooks/guard";
@@ -38,7 +38,7 @@ async function main() {
     }
     case "status": {
       const input = JSON.parse((await readStdin()) || "{}") as StatuslineInput;
-      process.stdout.write(renderStatusline(input, config.statusline));
+      process.stdout.write(renderStatusline(input, config.statusline, collectExtras(input)));
       return;
     }
     case "hook-compress": {
