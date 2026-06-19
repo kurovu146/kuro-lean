@@ -72,6 +72,15 @@ async function main() {
       process.stdout.write(out ?? "(không có log)\n");
       return;
     }
+    case "init": {
+      const { installSettings } = await import("./init");
+      const { homedir } = await import("os");
+      const { join } = await import("path");
+      const settingsPath = join(homedir(), ".claude", "settings.json");
+      const r = installSettings(settingsPath, "kt");
+      process.stdout.write(r.changed ? `✓ đã cài vào ${settingsPath}${r.backup ? ` (backup: ${r.backup})` : ""}\n` : "✓ đã cài sẵn, không đổi gì\n");
+      return;
+    }
     case "doctor": {
       const { runDoctor } = await import("./init");
       process.stdout.write(runDoctor());
