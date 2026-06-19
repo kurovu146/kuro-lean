@@ -1,0 +1,8 @@
+{
+  "profiles": { "test": true, "build": true, "install": true, "git": true, "generic": true },
+  "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
+  "git": { "maxHunkLinesPerFile": 20 },
+  "store": { "keepRuns": 50 },
+  "statusline": { "warnPct": 60, "dangerPct": 85 },
+  "guard": { "maxCatKb": 100, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "catBig": true } }
+}
