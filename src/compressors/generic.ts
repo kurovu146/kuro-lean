@@ -8,6 +8,9 @@ export function generic(input: CompressInput, opts: GenericOpts = DEFAULT): Comp
   if (total <= opts.thresholdLines) {
     return { text: combined, originalLines: total, compactLines: total };
   }
+  if (opts.headLines + opts.tailLines >= total) {
+    return { text: combined, originalLines: total, compactLines: total };
+  }
   const lines = combined.split("\n");
   const head = lines.slice(0, opts.headLines);
   const tail = lines.slice(-opts.tailLines);
