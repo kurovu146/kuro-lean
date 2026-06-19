@@ -24,5 +24,8 @@ export async function runAndCompress(
   }
   const saved = countLines(full) - result.compactLines;
   const footer = saved > 0 ? `\n↳ ${saved} dòng đã nén · full: kt show ${id}` : "";
-  return { compact: result.text + footer, exitCode: res.exitCode };
+  const header = res.timedOut
+    ? `⏱️ lệnh bị kill sau timeout (output có thể chưa đầy đủ — chạy raw nếu cần theo dõi liên tục)\n`
+    : "";
+  return { compact: header + result.text + footer, exitCode: res.exitCode };
 }

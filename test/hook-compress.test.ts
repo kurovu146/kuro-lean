@@ -27,3 +27,28 @@ test("KT_DISABLE=1 => null (kill-switch)", () => {
     delete process.env.KT_DISABLE;
   }
 });
+
+test("env-prefix => null (spawn array sẽ coi FOO=1 là binary)", () => {
+  expect(decideCompress("GIT_PAGER=cat git diff")).toBeNull();
+  expect(decideCompress("CI=1 npm test")).toBeNull();
+});
+
+test("có `kt run` ở giữa (bypass thủ công) => null, tránh double-wrap", () => {
+  expect(decideCompress("KT_RAW=1 kt run -- git diff")).toBeNull();
+});
+
+test("lệnh watch/long-running => null (wrap sẽ treo)", () => {
+  expect(decideCompress("tsc --watch")).toBeNull();
+  expect(decideCompress("jest --watch")).toBeNull();
+  expect(decideCompress("vitest watch")).toBeNull();
+  expect(decideCompress("next build -w")).toBeNull();
+});
+
+test("yarn dev => null (không còn nhận nhầm install)", () => {
+  expect(decideCompress("yarn dev")).toBeNull();
+  expect(decideCompress("yarn start")).toBeNull();
+});
+
+test("newline trong lệnh => null", () => {
+  expect(decideCompress("npm test\necho hi")).toBeNull();
+});

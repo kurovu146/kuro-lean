@@ -91,4 +91,7 @@ async function main() {
   }
 }
 
-main();
+main().catch((e) => {
+  process.stderr.write(`kt: ${e?.message ?? e}\n`);
+  process.exit(1);
+});
