@@ -18,3 +18,12 @@ test("có pipe/redirect/&& => bỏ qua (tránh phá logic)", () => {
 test("generic không match => null", () => {
   expect(decideCompress("echo hi")).toBeNull();
 });
+
+test("KT_DISABLE=1 => null (kill-switch)", () => {
+  process.env.KT_DISABLE = "1";
+  try {
+    expect(decideCompress("npm test")).toBeNull();
+  } finally {
+    delete process.env.KT_DISABLE;
+  }
+});
