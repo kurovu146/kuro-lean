@@ -9,6 +9,7 @@ export async function runAndCompress(
   argv: string[],
   config: Config,
   idFactory: () => string,
+  storeRoot?: string,
 ): Promise<{ compact: string; exitCode: number }> {
   const res = await run(argv);
   const command = argv.join(" ");
@@ -18,7 +19,7 @@ export async function runAndCompress(
   const id = idFactory();
   const full = joinOutput(input);
   try {
-    saveRun(id, full, { keep: config.store.keepRuns });
+    saveRun(id, full, { keep: config.store.keepRuns, root: storeRoot });
   } catch {
     // ghi full thất bại: vẫn in compact
   }
