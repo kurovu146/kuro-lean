@@ -1,0 +1,10 @@
+{
+  "name": "kuro-lean",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "kt": "./src/cli.ts" },
+  "scripts": {
+    "test": "bun test",
+    "kt": "bun run src/cli.ts"
+  }
+}
