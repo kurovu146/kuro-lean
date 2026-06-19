@@ -5,10 +5,18 @@ import { join } from "path";
 interface HookEntry { type: "command"; command: string }
 interface Matcher { matcher: string; hooks: HookEntry[] }
 
+function parseSettings(settingsPath: string): any {
+  if (!existsSync(settingsPath)) return {};
+  const raw = readFileSync(settingsPath, "utf8") || "{}";
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`${settingsPath} không phải JSON hợp lệ — sửa tay rồi chạy lại (không đụng để khỏi mất dữ liệu).`);
+  }
+}
+
 export function installSettings(settingsPath: string, ktBin: string): { changed: boolean; backup?: string } {
-  const settings: any = existsSync(settingsPath)
-    ? JSON.parse(readFileSync(settingsPath, "utf8") || "{}")
-    : {};
+  const settings: any = parseSettings(settingsPath);
 
   const before = JSON.stringify(settings);
 
@@ -52,7 +60,13 @@ export function runDoctor(home: string = homedir()): string {
   const lines: string[] = [];
   lines.push(`settings: ${existsSync(settingsPath) ? "✓ " + settingsPath : "✗ chưa có"}`);
   if (existsSync(settingsPath)) {
-    const cfg = JSON.parse(readFileSync(settingsPath, "utf8") || "{}");
+    let cfg: any;
+    try {
+      cfg = JSON.parse(readFileSync(settingsPath, "utf8") || "{}");
+    } catch {
+      lines.push("⚠ settings.json không phải JSON hợp lệ — kiểm tra lại");
+      return lines.join("\n") + "\n";
+    }
     const hasStatus = String(cfg.statusLine?.command ?? "").includes("kt status");
     const cmds = (cfg.hooks?.PreToolUse ?? []).flatMap((m: Matcher) => m.hooks?.map((h) => h.command) ?? []);
     lines.push(`statusLine kt: ${hasStatus ? "✓" : "✗"}`);

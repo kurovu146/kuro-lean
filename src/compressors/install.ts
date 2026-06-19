@@ -11,7 +11,7 @@ export function compressInstall(input: CompressInput): CompressResult {
   const lines = combined.split("\n");
   const kept = lines.filter((l) => KEEP_RE.test(l));
   const lastLine = lines.at(-1);
-  if (lastLine && !kept.includes(lastLine)) kept.push(lastLine);
+  if (lastLine && lastLine.trim() && !kept.includes(lastLine)) kept.push(lastLine);
   const text = kept.length ? kept.join("\n") : combined;
   return { text, originalLines: total, compactLines: countLines(text) };
 }

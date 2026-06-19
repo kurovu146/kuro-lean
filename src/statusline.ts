@@ -170,7 +170,26 @@ function parseShortstat(s: string): { added: number; removed: number } {
   };
 }
 
-export function collectGit(cwd: string): GitInfo | null {
+// Statusline render rất thường xuyên, mỗi lần là 1 process kt mới → cache file ngắn hạn
+// để khỏi spawn 6 lệnh git mỗi render. TTL ngắn nên vẫn đủ tươi cho diff chưa stage.
+const GIT_CACHE_TTL_MS = 1500;
+
+export function collectGit(cwd: string, now: number = Date.now()): GitInfo | null {
+  const key = createHash("md5").update(cwd).digest("hex").slice(0, 8);
+  const cachePath = join(tmpdir(), `kt-git-${key}.json`);
+  try {
+    const c = JSON.parse(readFileSync(cachePath, "utf8"));
+    if (typeof c.ts === "number" && now - c.ts < GIT_CACHE_TTL_MS) return c.git ?? null;
+  } catch {}
+
+  const info = computeGit(cwd);
+  try {
+    writeFileSync(cachePath, JSON.stringify({ ts: now, git: info }));
+  } catch {}
+  return info;
+}
+
+function computeGit(cwd: string): GitInfo | null {
   if (!gitRun("git rev-parse --git-dir", cwd)) return null;
   const branch =
     gitRun("git branch --show-current", cwd) || gitRun("git rev-parse --short HEAD", cwd);

@@ -14,7 +14,9 @@ export function listRuns(root: string = DEFAULT_ROOT): string[] {
 export function saveRun(id: string, content: string, opts: { keep?: number; root?: string } = {}): string {
   const root = opts.root ?? DEFAULT_ROOT;
   mkdirSync(root, { recursive: true });
-  const path = join(root, `${id}.log`);
+  // chống trùng id (2 run cùng timestamp-ms) → thêm hậu tố thay vì ghi đè
+  let path = join(root, `${id}.log`);
+  for (let n = 1; existsSync(path); n++) path = join(root, `${id}-${n}.log`);
   writeFileSync(path, content);
   const keep = opts.keep ?? 50;
   const ids = listRuns(root);

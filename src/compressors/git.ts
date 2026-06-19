@@ -13,7 +13,13 @@ export function compressGit(
     return generic(input, opts);
   }
 
-  // diff: gom theo file, đếm +/-
+  // diff nhỏ → giữ NGUYÊN nội dung (Claude thường chạy `git diff` để ĐỌC thay đổi).
+  // Chỉ rút gọn shortstat khi diff lớn, tránh phản tác dụng (mất nội dung → phải chạy lại).
+  if (total <= opts.thresholdLines) {
+    return { text: combined, originalLines: total, compactLines: total };
+  }
+
+  // diff lớn: gom theo file, đếm +/-
   const files: { path: string; add: number; del: number }[] = [];
   let cur: { path: string; add: number; del: number } | null = null;
   for (const line of combined.split("\n")) {

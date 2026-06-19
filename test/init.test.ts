@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "fs";
-import { installSettings } from "../src/init";
+import { installSettings, runDoctor } from "../src/init";
 
 const DIR = "/tmp/kt-test-init";
 const settings = `${DIR}/settings.json`;
@@ -48,6 +48,22 @@ test("giữ nguyên hook/config có sẵn của user", () => {
   expect(cfg.env.FOO).toBe("bar");
   expect(JSON.stringify(cfg.hooks.PreToolUse)).toContain("my-hook");
   expect(existsSync(`${settings}.bak`)).toBe(true);
+});
+
+test("settings.json hỏng => installSettings báo lỗi rõ, KHÔNG ghi đè", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, "{ not json");
+  expect(() => installSettings(settings, "kt")).toThrow(/không phải JSON hợp lệ/);
+  expect(readFileSync(settings, "utf8")).toBe("{ not json"); // file nguyên vẹn
+});
+
+test("runDoctor: settings.json hỏng => cảnh báo, không crash", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(`${DIR}/.claude`, { recursive: true });
+  writeFileSync(`${DIR}/.claude/settings.json`, "{ broken");
+  const out = runDoctor(DIR);
+  expect(out).toContain("không phải JSON hợp lệ");
 });
 
 test("append vào Bash matcher có sẵn, không tạo block trùng", () => {

@@ -1,4 +1,8 @@
 import { test, expect } from "bun:test";
+import { writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { createHash } from "crypto";
 import { renderStatusline, collectGit, type Extras } from "../src/statusline";
 
 const cfg = { warnPct: 60, dangerPct: 85 };
@@ -88,4 +92,17 @@ test("collectGit trên repo này trả branch", () => {
   expect(g).not.toBeNull();
   expect(typeof g!.branch).toBe("string");
   expect(g!.branch.length).toBeGreaterThan(0);
+});
+
+test("collectGit: cache trong TTL, recompute ngoài TTL", () => {
+  const dir = "/tmp/kt-git-cache-probe-nonrepo";
+  const key = createHash("md5").update(dir).digest("hex").slice(0, 8);
+  const cachePath = join(tmpdir(), `kt-git-${key}.json`);
+  const fake = { branch: "cached-branch", ahead: 0, behind: 0, added: 9, removed: 0 };
+  writeFileSync(cachePath, JSON.stringify({ ts: 1000, git: fake }));
+
+  // now=1400 → 400ms < 1500ms TTL → trả cache (không chạy git)
+  expect(collectGit(dir, 1400)?.branch).toBe("cached-branch");
+  // now=5000 → ngoài TTL → recompute; dir không phải repo → null
+  expect(collectGit(dir, 5000)).toBeNull();
 });

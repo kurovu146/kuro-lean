@@ -16,6 +16,11 @@ kt doctor           # kiểm tra
 - `KT_RAW=1 kt run -- <cmd>` — chạy không nén.
 - `KT_DISABLE=1` — hook không rewrite (kill-switch).
 
+## An toàn (đã fix triệt để)
+- Lệnh **watch/dev** (`yarn dev`, `tsc --watch`, `vitest watch`…) **không** bị wrap → không treo. `kt run` cũng có timeout 120s, lệnh long-running bị kill thay vì treo vô hạn, output đã có vẫn giữ.
+- Lệnh **env-prefix** (`GIT_PAGER=cat git diff`) & lệnh chứa `kt run` không bị rewrite → để bash xử lý đúng semantics.
+- `git diff` **nhỏ (≤40 dòng) giữ NGUYÊN** để Claude đọc; chỉ rút gọn `+/-` per-file khi diff lớn.
+
 ## Subcommand
 - `kt run -- <cmd>`  chạy lệnh, in bản nén, lưu full
 - `kt show [id]`     xem full log

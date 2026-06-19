@@ -18,3 +18,12 @@ test("show không id => bản mới nhất; prune theo keep", () => {
   expect(showRun(undefined, ROOT)).toBe("C");
   expect(listRuns(ROOT)).toEqual(["002", "003"]);
 });
+
+test("trùng id => không ghi đè, tạo file hậu tố", () => {
+  rmSync(ROOT, { recursive: true, force: true });
+  saveRun("dup", "first", { root: ROOT });
+  saveRun("dup", "second", { root: ROOT });
+  expect(showRun("dup", ROOT)).toBe("first");        // bản gốc còn nguyên
+  expect(showRun("dup-1", ROOT)).toBe("second");     // bản thứ 2 sang hậu tố
+  expect(listRuns(ROOT)).toEqual(["dup", "dup-1"]);
+});

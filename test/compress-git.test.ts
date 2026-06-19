@@ -3,16 +3,27 @@ import { readFileSync } from "fs";
 import { compressGit } from "../src/compressors/git";
 import type { CompressInput } from "../src/compressors/types";
 
-test("git diff => per-file +/- stat", () => {
+test("git diff LỚN => per-file +/- stat", () => {
   const input: CompressInput = {
     stdout: readFileSync("test/fixtures/git-diff.txt", "utf8"),
     stderr: "", exitCode: 0, command: "git diff",
   };
-  const r = compressGit(input);
+  // ép ngưỡng thấp để vào nhánh rút gọn (fixture nhỏ)
+  const r = compressGit(input, { thresholdLines: 5, headLines: 15, tailLines: 10 });
   expect(r.text).toContain("src/a.ts");
   expect(r.text).toContain("+1 -1");   // a.ts: 1 add, 1 remove
   expect(r.text).toContain("src/b.ts");
   expect(r.text).not.toContain("@@");  // hunk header bị lược
+});
+
+test("git diff NHỎ => giữ nguyên nội dung (Claude cần đọc)", () => {
+  const input: CompressInput = {
+    stdout: readFileSync("test/fixtures/git-diff.txt", "utf8"),
+    stderr: "", exitCode: 0, command: "git diff",
+  };
+  const r = compressGit(input); // threshold mặc định 40 > 16 dòng
+  expect(r.text).toContain("@@");        // giữ hunk
+  expect(r.text).toContain("+const y = 2;");
 });
 
 test("git status nhỏ => giữ nguyên (generic)", () => {
