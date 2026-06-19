@@ -6,9 +6,15 @@ Nguyên tắc: **nén nhiễu, giữ tín hiệu** — test fail/error luôn in 
 ## Cài
 ```bash
 bun link            # cho kt vào PATH
-kt init             # đăng ký hook + statusline vào ~/.claude/settings.json
+kt init             # đăng ký PreToolUse hook (+ statusline nếu chưa có) vào ~/.claude/settings.json
 kt doctor           # kiểm tra
 ```
+- `kt init` **không ghi đè** statusLine custom của bạn — chỉ set `kt status` khi bạn CHƯA có statusLine. Tự backup `.bak` trước khi đổi, idempotent.
+- Sau khi cài, lệnh bị rewrite thành `kt run -- ...`. Thêm `Bash(kt run:*)` vào `permissions.allow` (hoặc bấm "always allow" lần đầu) để khỏi bị hỏi.
+
+## Bypass / tắt
+- `KT_RAW=1 kt run -- <cmd>` — chạy không nén.
+- `KT_DISABLE=1` — hook không rewrite (kill-switch).
 
 ## Subcommand
 - `kt run -- <cmd>`  chạy lệnh, in bản nén, lưu full
@@ -16,8 +22,6 @@ kt doctor           # kiểm tra
 - `kt status`        statusline (đọc JSON stdin)
 - `kt init` / `kt doctor`
 
-## Bypass
-- `KT_RAW=1 kt run -- <cmd>` hoặc xem `kt show`.
 
 ## Kết quả đo (đo thật trên repo này, 2026-06-19)
 

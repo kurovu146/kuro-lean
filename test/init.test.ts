@@ -18,6 +18,19 @@ test("settings trống => thêm hook + statusLine", () => {
   expect(hooks).toContain("kt hook-compress");
 });
 
+test("có statusLine custom sẵn => KHÔNG ghi đè, vẫn thêm hook", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  const custom = "node \"$HOME/.claude/statusline.cjs\"";
+  writeFileSync(settings, JSON.stringify({ statusLine: { type: "command", command: custom, padding: 0 } }));
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  expect(cfg.statusLine.command).toBe(custom); // giữ nguyên statusline custom
+  const hooks = cfg.hooks.PreToolUse[0].hooks.map((h: any) => h.command);
+  expect(hooks).toContain("kt hook-guard");
+  expect(hooks).toContain("kt hook-compress");
+});
+
 test("idempotent: chạy lần 2 không nhân đôi", () => {
   installSettings(settings, "kt");
   const before = readFileSync(settings, "utf8");

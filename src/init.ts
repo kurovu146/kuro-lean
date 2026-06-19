@@ -12,9 +12,10 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
 
   const before = JSON.stringify(settings);
 
-  // statusLine
+  // statusLine: chỉ set khi user CHƯA có statusLine nào.
+  // KHÔNG ghi đè statusLine custom của user (vd statusline.cjs riêng).
   const wantStatus = `${ktBin} status`;
-  if (settings.statusLine?.command !== wantStatus) {
+  if (!settings.statusLine) {
     settings.statusLine = { type: "command", command: wantStatus, padding: 2 };
   }
 
