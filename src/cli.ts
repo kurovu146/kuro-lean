@@ -24,7 +24,11 @@ async function main() {
     case "run": {
       // kt run -- <command...>
       const argv = rest[0] === "--" ? rest.slice(1) : rest;
-      if (process.env.KT_RAW === "1" || argv.length === 0) {
+      if (argv.length === 0) {
+        process.stderr.write("kt run -- <command>\n");
+        process.exit(1);
+      }
+      if (process.env.KT_RAW === "1") {
         const proc = Bun.spawn(argv, { stdout: "inherit", stderr: "inherit" });
         process.exit(await proc.exited);
       }
@@ -38,7 +42,9 @@ async function main() {
       return;
     }
     case "hook-compress": {
-      const input = JSON.parse((await readStdin()) || "{}");
+      let input: any;
+      try { input = JSON.parse((await readStdin()) || "{}"); }
+      catch { return; }   // malformed stdin → no-op, let the command run normally
       const command: string = input?.tool_input?.command ?? "";
       const next = decideCompress(command);
       if (next) {
@@ -49,7 +55,9 @@ async function main() {
       return;
     }
     case "hook-guard": {
-      const input = JSON.parse((await readStdin()) || "{}");
+      let input: any;
+      try { input = JSON.parse((await readStdin()) || "{}"); }
+      catch { return; }   // malformed stdin → no-op, let the command run normally
       const command: string = input?.tool_input?.command ?? "";
       const { deny, reason } = decideGuard(command, config.guard);
       if (deny) {
