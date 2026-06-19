@@ -87,7 +87,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|hook-compress|hook-guard|show|doctor>\n");
+      process.stdout.write("kt <run|status|init|hook-compress|hook-guard|show|doctor>\n");
   }
 }
 

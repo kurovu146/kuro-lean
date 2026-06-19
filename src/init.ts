@@ -22,11 +22,12 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
   const wanted = [`${ktBin} hook-guard`, `${ktBin} hook-compress`];
-  let bashBlock: Matcher | undefined = settings.hooks.PreToolUse.find((m: Matcher) => m.matcher === "Bash" && m.hooks?.some((h) => h.command.startsWith(ktBin)));
+  let bashBlock: Matcher | undefined = settings.hooks.PreToolUse.find((m: Matcher) => m.matcher === "Bash");
   if (!bashBlock) {
     bashBlock = { matcher: "Bash", hooks: [] };
     settings.hooks.PreToolUse.push(bashBlock);
   }
+  bashBlock.hooks ??= [];
   for (const cmd of wanted) {
     if (!bashBlock.hooks.some((h) => h.command === cmd)) {
       bashBlock.hooks.push({ type: "command", command: cmd });

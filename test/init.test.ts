@@ -36,3 +36,17 @@ test("giữ nguyên hook/config có sẵn của user", () => {
   expect(JSON.stringify(cfg.hooks.PreToolUse)).toContain("my-hook");
   expect(existsSync(`${settings}.bak`)).toBe(true);
 });
+
+test("append vào Bash matcher có sẵn, không tạo block trùng", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "user-bash-hook" }] }] } }));
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  const bashBlocks = cfg.hooks.PreToolUse.filter((m: any) => m.matcher === "Bash");
+  expect(bashBlocks.length).toBe(1);
+  const cmds = bashBlocks[0].hooks.map((h: any) => h.command);
+  expect(cmds).toContain("user-bash-hook");
+  expect(cmds).toContain("kt hook-guard");
+  expect(cmds).toContain("kt hook-compress");
+});
