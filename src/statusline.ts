@@ -39,6 +39,7 @@ export interface Extras {
   todos: { done: number; total: number } | null;
   quota: string | null; // đã format sẵn (vd "⏳ 3h 12m left (40% used)")
   plan: string | null;
+  cost?: number | null; // cost của riêng phiên hiện tại (reset khi /clear); undefined => fallback input.cost
 }
 
 // Đệm autocompact — khớp cách Claude Code tính % trong /context.
@@ -73,7 +74,7 @@ function ctxPercent(cw: CtxWindow): number | undefined {
     const total = totalTokens(cw);
     return Math.min(100, Math.round(((total + AUTOCOMPACT_BUFFER) / size) * 100));
   }
-  return cw.used_percentage;
+  return cw.used_percentage ?? undefined;
 }
 
 function ctxLabel(size: number): string {
@@ -100,16 +101,20 @@ export function renderStatusline(
   const pct = ctxPercent(cw);
   const tokens = totalTokens(cw);
 
-  const dot = pct === undefined ? "⚪" : pct >= cfg.dangerPct ? "🔴" : pct >= cfg.warnPct ? "🟡" : "🟢";
+  const dot = pct == null ? "⚪" : pct >= cfg.dangerPct ? "🔴" : pct >= cfg.warnPct ? "🟡" : "🟢";
   const model = input.model?.display_name ?? input.model?.id ?? "Claude";
   const label = ctxLabel(size);
+  // display_name của Claude Code đôi khi đã kèm sẵn nhãn (vd "Opus 4.8 (1M context)") → tránh lặp.
+  const showLabel = !!label && !/\(\s*\d+\s*[KM]\b[^)]*\)/.test(model);
 
   // L1
-  const l1: string[] = [`${dot} ${model}${label ? " " + label : ""}`];
-  if (pct !== undefined) l1.push(`${bar(pct)} ${pct}%`);
+  const l1: string[] = [`${dot} ${model}${showLabel ? " " + label : ""}`];
+  if (pct != null) l1.push(`${bar(pct)} ${pct}%`);
   if (tokens > 0) l1.push(`~${Math.round(tokens / 1000)}k tok`);
   if (extras?.quota) l1.push(extras.quota);
-  if (input.cost?.total_cost_usd !== undefined) l1.push(`$${input.cost.total_cost_usd.toFixed(2)}`);
+  // Ưu tiên cost đã neo theo phiên (reset khi /clear); fallback total tích luỹ từ Claude Code.
+  const cost = extras?.cost ?? input.cost?.total_cost_usd;
+  if (cost != null) l1.push(`$${cost.toFixed(2)}`);
   const lines = [l1.join(" · ")];
 
   if (extras) {
@@ -289,6 +294,31 @@ export function readActivePlan(sessionId?: string): string | null {
   }
 }
 
+/**
+ * Cost của RIÊNG phiên hiện tại. `total_cost_usd` Claude Code gửi là tích luỹ theo cả
+ * lần chạy CLI nên `/clear` không reset nó. Ta neo `baseline` theo conversation
+ * (định danh bằng transcript_path); khi conversation đổi (do /clear) hoặc total tụt
+ * (Claude tự reset) thì tái-neo → hiển thị `total - baseline`, bắt đầu lại từ ~0.
+ */
+export function sessionCost(input: StatuslineInput): number | undefined {
+  const total = input.cost?.total_cost_usd;
+  if (total === undefined) return undefined;
+  const key = createHash("md5").update(input.session_id || "default").digest("hex").slice(0, 8);
+  const statePath = join(tmpdir(), `kt-cost-${key}.json`);
+  const transcript = input.transcript_path ?? "";
+  try {
+    const st = JSON.parse(readFileSync(statePath, "utf8"));
+    if (st?.transcriptPath === transcript && typeof st.baseline === "number" && total >= st.baseline) {
+      return total - st.baseline;
+    }
+  } catch {}
+  // conversation mới / đổi transcript (clear) / total tụt → neo lại baseline, cost về 0
+  try {
+    writeFileSync(statePath, JSON.stringify({ transcriptPath: transcript, baseline: total }));
+  } catch {}
+  return 0;
+}
+
 export function collectExtras(input: StatuslineInput): Extras {
   const dir = input.cwd || process.cwd();
   const { tools, todos } = parseTranscript(input.transcript_path);
@@ -299,5 +329,6 @@ export function collectExtras(input: StatuslineInput): Extras {
     todos,
     quota: readQuota(),
     plan: readActivePlan(input.session_id),
+    cost: sessionCost(input),
   };
 }

@@ -3,7 +3,7 @@ import { writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
-import { renderStatusline, collectGit, type Extras } from "../src/statusline";
+import { renderStatusline, collectGit, sessionCost, type Extras } from "../src/statusline";
 
 const cfg = { warnPct: 60, dangerPct: 85 };
 
@@ -50,6 +50,32 @@ test("label 200K khi size = 200000", () => {
   expect(s).toContain("(200K)");
 });
 
+test("display_name đã kèm nhãn => không lặp label", () => {
+  const s = renderStatusline(
+    {
+      model: { display_name: "Opus 4.8 (1M context)" },
+      context_window: { used_percentage: 10, context_window_size: 1_000_000 },
+    },
+    cfg,
+  );
+  // chỉ xuất hiện đúng 1 lần, không thành "(1M context) (1M context)"
+  expect(s.match(/\(1M context\)/g)?.length).toBe(1);
+});
+
+test("used_percentage = null (sau /clear) => dot trắng, không có 'null%'", () => {
+  const s = renderStatusline(
+    {
+      model: { display_name: "Opus 4.8 (1M context)" },
+      context_window: { used_percentage: null as any, context_window_size: 1_000_000 },
+      cost: { total_cost_usd: 0 },
+    },
+    cfg,
+  );
+  expect(s).not.toContain("null");
+  expect(s).toContain("⚪");
+  expect(s).toContain("$0.00");
+});
+
 test("3 dòng đầy đủ: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
   const extras: Extras = {
     dir: `${process.env.HOME}/Dev/kuro-lean`,
@@ -85,6 +111,53 @@ test("extras tối thiểu (chỉ dir) => L1 + L2(dir), không có L3", () => {
   const lines = s.split("\n");
   expect(lines.length).toBe(2); // L1 + L2(dir); không có L3 vì không có diff/todo/tools
   expect(lines[1]).toContain("📁 /tmp/x");
+});
+
+test("extras.cost ưu tiên hơn input.cost (cost phiên đã reset)", () => {
+  const extras: Extras = { dir: "/tmp/x", git: null, tools: 0, todos: null, quota: null, plan: null, cost: 0 };
+  const s = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 }, cost: { total_cost_usd: 0.89 } },
+    cfg,
+    extras,
+  );
+  expect(s).toContain("$0.00"); // không phải $0.89 cũ
+  expect(s).not.toContain("$0.89");
+});
+
+test("sessionCost: conversation mới neo baseline => 0, conversation tiếp => total - baseline", () => {
+  const session = "sess-cost-probe-1";
+  const transcript = "/tmp/kt-tr-probe-A.jsonl";
+  const key = createHash("md5").update(session).digest("hex").slice(0, 8);
+  const statePath = join(tmpdir(), `kt-cost-${key}.json`);
+  try { writeFileSync(statePath, ""); } catch {}
+  // ép trạng thái "chưa có" bằng file rác để đảm bảo re-anchor
+  writeFileSync(statePath, "{}");
+
+  // lần đầu thấy transcript này: neo baseline = 0.89 -> cost 0
+  expect(sessionCost({ session_id: session, transcript_path: transcript, cost: { total_cost_usd: 0.89 } })).toBe(0);
+  // cùng conversation, total tăng -> chỉ tính phần phát sinh sau khi neo
+  expect(
+    sessionCost({ session_id: session, transcript_path: transcript, cost: { total_cost_usd: 0.95 } }),
+  ).toBeCloseTo(0.06, 5);
+});
+
+test("sessionCost: /clear (transcript đổi) => reset về 0", () => {
+  const session = "sess-cost-probe-2";
+  const tA = "/tmp/kt-tr-probe-clearA.jsonl";
+  const tB = "/tmp/kt-tr-probe-clearB.jsonl";
+  const key = createHash("md5").update(session).digest("hex").slice(0, 8);
+  writeFileSync(join(tmpdir(), `kt-cost-${key}.json`), "{}");
+
+  sessionCost({ session_id: session, transcript_path: tA, cost: { total_cost_usd: 0.5 } }); // neo 0.5
+  expect(
+    sessionCost({ session_id: session, transcript_path: tA, cost: { total_cost_usd: 0.7 } }),
+  ).toBeCloseTo(0.2, 5);
+  // /clear -> transcript mới, total vẫn tích luỹ 0.7 -> reset về 0
+  expect(sessionCost({ session_id: session, transcript_path: tB, cost: { total_cost_usd: 0.7 } })).toBe(0);
+});
+
+test("sessionCost: không có cost => undefined (không hiện $)", () => {
+  expect(sessionCost({ session_id: "sess-no-cost", transcript_path: "/tmp/x.jsonl" })).toBeUndefined();
 });
 
 test("collectGit trên repo này trả branch", () => {
