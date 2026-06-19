@@ -5,6 +5,21 @@ import { join } from "path";
 interface HookEntry { type: "command"; command: string }
 interface Matcher { matcher: string; hooks: HookEntry[] }
 
+/** Đảm bảo matcher tồn tại và chứa đủ các command (idempotent, không tạo block trùng). */
+function ensureMatcher(list: Matcher[], matcher: string, cmds: string[]): void {
+  let block = list.find((m) => m.matcher === matcher);
+  if (!block) {
+    block = { matcher, hooks: [] };
+    list.push(block);
+  }
+  block.hooks ??= [];
+  for (const cmd of cmds) {
+    if (!block.hooks.some((h) => h.command === cmd)) {
+      block.hooks.push({ type: "command", command: cmd });
+    }
+  }
+}
+
 function parseSettings(settingsPath: string): any {
   if (!existsSync(settingsPath)) return {};
   const raw = readFileSync(settingsPath, "utf8") || "{}";
@@ -27,21 +42,11 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
     settings.statusLine = { type: "command", command: wantStatus, padding: 2 };
   }
 
-  // hooks.PreToolUse (matcher Bash): guard trước, compress sau
+  // hooks.PreToolUse: Bash (guard trước, compress sau) + Read (guard chặn file nhiễu)
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
-  const wanted = [`${ktBin} hook-guard`, `${ktBin} hook-compress`];
-  let bashBlock: Matcher | undefined = settings.hooks.PreToolUse.find((m: Matcher) => m.matcher === "Bash");
-  if (!bashBlock) {
-    bashBlock = { matcher: "Bash", hooks: [] };
-    settings.hooks.PreToolUse.push(bashBlock);
-  }
-  bashBlock.hooks ??= [];
-  for (const cmd of wanted) {
-    if (!bashBlock.hooks.some((h) => h.command === cmd)) {
-      bashBlock.hooks.push({ type: "command", command: cmd });
-    }
-  }
+  ensureMatcher(settings.hooks.PreToolUse, "Bash", [`${ktBin} hook-guard`, `${ktBin} hook-compress`]);
+  ensureMatcher(settings.hooks.PreToolUse, "Read", [`${ktBin} hook-guard`]);
 
   const after = JSON.stringify(settings);
   if (after === before) return { changed: false };

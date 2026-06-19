@@ -1,10 +1,55 @@
 import { existsSync, statSync } from "fs";
+import { basename } from "path";
 import type { GuardConfig } from "../config";
 
 interface Rule {
   key: string;
   test: (cmd: string) => boolean;
   reason: string;
+}
+
+// Read kèm offset/limit nhỏ hơn ngưỡng này = agent cố ý đọc 1 đoạn → cho qua.
+const INTENTIONAL_READ_LIMIT = 400;
+
+const NOISE_NAMES = new Set([
+  "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
+  "go.sum", "Cargo.lock", "composer.lock", "Gemfile.lock", "poetry.lock", "Pipfile.lock", "flake.lock",
+]);
+const NOISE_EXT_RE = /\.min\.(js|css)$|\.map$/;
+const NOISE_DIR_RE = /(^|\/)(node_modules|dist|build|\.next|out|vendor|coverage)\//;
+
+/**
+ * Chặn `Read` cả file nhiễu (lock/generated/minified/vendor hoặc > maxReadKb) vì tốn token,
+ * ít tín hiệu để hiểu code. Cho qua nếu agent đọc có chủ đích (offset/limit nhỏ).
+ * Trả lý do nếu nên chặn, ngược lại null.
+ */
+export function checkNoisyRead(
+  input: { file_path?: string; offset?: number; limit?: number },
+  cfg: GuardConfig,
+): string | null {
+  if (!cfg.rules.readNoise) return null;
+  const fp = input.file_path;
+  if (!fp) return null;
+
+  // cửa thoát: đọc đoạn có chủ đích
+  if (input.offset != null) return null;
+  if (input.limit != null && input.limit <= INTENTIONAL_READ_LIMIT) return null;
+
+  const base = basename(fp);
+  let why: string | null = null;
+  if (NOISE_NAMES.has(base)) why = "lock file";
+  else if (NOISE_EXT_RE.test(fp)) why = "file generated/minified";
+  else if (NOISE_DIR_RE.test(fp)) why = "file trong thư mục vendor/build";
+  else if (existsSync(fp)) {
+    try {
+      const size = statSync(fp).size;
+      if (size > cfg.maxReadKb * 1024) why = `file lớn ${Math.round(size / 1024)}KB (> ${cfg.maxReadKb}KB)`;
+    } catch {
+      // không stat được → bỏ qua
+    }
+  }
+  if (!why) return null;
+  return `\`Read ${base}\` là ${why} → tốn token, ít tín hiệu. Cần 1 đoạn cụ thể? Read kèm limit nhỏ (vd limit:200) hoặc dùng Grep tìm đúng dòng. Tắt tạm: KT_DISABLE=1.`;
 }
 
 /**

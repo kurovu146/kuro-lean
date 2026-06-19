@@ -3,7 +3,7 @@ import { runAndCompress } from "./pipeline";
 import { renderStatusline, collectExtras, type StatuslineInput } from "./statusline";
 import { showRun } from "./store";
 import { decideCompress } from "./hooks/compress";
-import { decideGuard } from "./hooks/guard";
+import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
 
 async function readStdin(): Promise<string> {
@@ -55,12 +55,19 @@ async function main() {
       return;
     }
     case "hook-guard": {
+      if (process.env.KT_DISABLE === "1") return;   // kill-switch: tắt cả guard
       let input: any;
       try { input = JSON.parse((await readStdin()) || "{}"); }
       catch { return; }   // malformed stdin → no-op, let the command run normally
-      const command: string = input?.tool_input?.command ?? "";
-      const { deny, reason } = decideGuard(command, config.guard);
-      if (deny) {
+      let reason: string | null | undefined;
+      if (input?.tool_name === "Read") {
+        reason = checkNoisyRead(input?.tool_input ?? {}, config.guard);
+      } else {
+        const command: string = input?.tool_input?.command ?? "";
+        const r = decideGuard(command, config.guard);
+        reason = r.deny ? r.reason : null;
+      }
+      if (reason) {
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason },
         }));

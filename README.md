@@ -70,7 +70,7 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 ## Bypass / disable
 
 - `KT_RAW=1 kt run -- <cmd>` — run without compression.
-- `KT_DISABLE=1` — the hook stops rewriting (kill switch).
+- `KT_DISABLE=1` — kill switch: the hook stops rewriting **and** the guard stops blocking.
 
 ## Subcommands
 
@@ -95,6 +95,21 @@ untouched to avoid destroying signal):
 | **install** | keep `added/removed/audited/vulnerabilit…` lines; on failure keep full output |
 | **git** | `git diff` ≤ 40 lines kept as-is (the agent usually wants to *read* it); larger diffs → `path +adds -dels` per file. `git status`/`log` handled as generic |
 | **generic** | > 40 lines → keep first 15 + last 10, hide the middle (`… [N lines hidden — kt show] …`) |
+
+## Guard — block token-hungry calls before they run
+
+A `PreToolUse` hook denies calls that would dump noise into the context, with a helpful reason:
+
+- **Bash**: `find /` (whole-disk scan), `npm ls` without `--depth`, `tree` without `-L`, and
+  `cat <file>` larger than `guard.maxCatKb` (default 100 KB).
+- **Read** (`readNoise`): reading a whole **noise file** — lock files (`package-lock.json`,
+  `yarn.lock`, `bun.lockb`, `go.sum`, `Cargo.lock`…), minified/generated (`*.min.js`, `*.min.css`,
+  `*.map`), files under `node_modules/`/`dist/`/`build/`/`.next/`/`vendor/`/`coverage/`, or any file
+  larger than `guard.maxReadKb` (default 500 KB). **Escape hatch:** reading with an `offset` or a
+  small `limit` (≤ 400) is allowed — so you can still inspect a slice on purpose.
+
+Read is already capped at 2000 lines by Claude Code, so the guard targets *noise*, not size of code
+files. `KT_DISABLE=1` turns the guard off too.
 
 ## Safety guarantees
 

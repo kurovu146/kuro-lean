@@ -18,6 +18,17 @@ test("settings trống => thêm hook + statusLine", () => {
   expect(hooks).toContain("kt hook-compress");
 });
 
+test("đăng ký matcher Read => kt hook-guard (chặn file nhiễu)", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, "{}");
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  const readBlock = cfg.hooks.PreToolUse.find((m: any) => m.matcher === "Read");
+  expect(readBlock).toBeDefined();
+  expect(readBlock.hooks.map((h: any) => h.command)).toContain("kt hook-guard");
+});
+
 test("có statusLine custom sẵn => KHÔNG ghi đè, vẫn thêm hook", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });

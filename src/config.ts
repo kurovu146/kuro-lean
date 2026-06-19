@@ -5,6 +5,7 @@ import type { GenericOpts } from "./compressors/types";
 
 export interface GuardConfig {
   maxCatKb: number;
+  maxReadKb: number;
   rules: Record<string, boolean>;
 }
 
@@ -21,7 +22,7 @@ export const defaultConfig: Config = {
   generic: { thresholdLines: 40, headLines: 15, tailLines: 10 },
   store: { keepRuns: 50 },
   statusline: { warnPct: 60, dangerPct: 85 },
-  guard: { maxCatKb: 100, rules: { findRoot: true, npmLs: true, treeNoDepth: true, catBig: true } },
+  guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, catBig: true, readNoise: true } },
 };
 
 export function loadConfig(cwd: string = process.cwd()): Config {
