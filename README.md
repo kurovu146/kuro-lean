@@ -19,7 +19,11 @@ kt doctor           # kiểm tra
 ## Subcommand
 - `kt run -- <cmd>`  chạy lệnh, in bản nén, lưu full
 - `kt show [id]`     xem full log
-- `kt status`        statusline 2 dòng (đọc JSON stdin): `🟢 model (ctx) · bar % · ~tok · $cost` / `📁 dir · 🌿 branch ↑↓ · 📝 +/- · 🔧 tools`
+- `kt status`        statusline 3 dòng (đọc JSON stdin):
+  - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost`
+  - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
+  - `📝 +/- · ✅ todo · 🔧 tools`
+  - ⏳quota + 📋plan + ✅todo lấy từ cache CK-stack/transcript nếu có; thiếu thì tự ẩn.
 - `kt init` / `kt doctor`
 
 

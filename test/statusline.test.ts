@@ -46,25 +46,41 @@ test("label 200K khi size = 200000", () => {
   expect(s).toContain("(200K)");
 });
 
-test("dòng 2 từ extras: dir + branch + diff + tools", () => {
+test("3 dòng đầy đủ: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
   const extras: Extras = {
     dir: `${process.env.HOME}/Dev/kuro-lean`,
     git: { branch: "main", ahead: 1, behind: 0, added: 12, removed: 3 },
     tools: 8,
+    todos: { done: 2, total: 5 },
+    quota: "⏳ 3h 12m left (40% used)",
+    plan: "refactor-auth",
   };
-  const s = renderStatusline({ context_window: { used_percentage: 10, context_window_size: 200000 } }, cfg, extras);
-  const l2 = s.split("\n")[1] ?? "";
-  expect(l2).toContain("📁 ~/Dev/kuro-lean"); // homify
+  const s = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 }, cost: { total_cost_usd: 0.5 } },
+    cfg,
+    extras,
+  );
+  const [l1, l2, l3] = s.split("\n");
+  // L1: quota nằm trước cost
+  expect(l1).toContain("⏳ 3h 12m left (40% used)");
+  expect(l1).toContain("$0.50");
+  // L2
+  expect(l2).toContain("📁 ~/Dev/kuro-lean");
   expect(l2).toContain("🌿 main");
   expect(l2).toContain("↑1");
-  expect(l2).toContain("📝 +12 -3");
-  expect(l2).toContain("🔧 8 tools");
+  expect(l2).toContain("📋 refactor-auth");
+  // L3
+  expect(l3).toContain("📝 +12 -3");
+  expect(l3).toContain("✅ 2/5");
+  expect(l3).toContain("🔧 8 tools");
 });
 
-test("extras không có git => chỉ dòng 1 (l2 chỉ có dir nên bỏ)", () => {
-  const extras: Extras = { dir: "/tmp/x", git: null, tools: 0 };
+test("extras tối thiểu (chỉ dir) => L1 + L2(dir), không có L3", () => {
+  const extras: Extras = { dir: "/tmp/x", git: null, tools: 0, todos: null, quota: null, plan: null };
   const s = renderStatusline({ context_window: { used_percentage: 10, context_window_size: 200000 } }, cfg, extras);
-  expect(s.split("\n").length).toBe(1); // l2 chỉ có dir => không thêm dòng
+  const lines = s.split("\n");
+  expect(lines.length).toBe(2); // L1 + L2(dir); không có L3 vì không có diff/todo/tools
+  expect(lines[1]).toContain("📁 /tmp/x");
 });
 
 test("collectGit trên repo này trả branch", () => {

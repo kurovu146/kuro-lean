@@ -6,6 +6,7 @@ import { createHash } from "crypto";
 
 export interface StatuslineInput {
   cwd?: string;
+  session_id?: string;
   transcript_path?: string;
   model?: { id?: string; display_name?: string };
   context_window?: {
@@ -35,6 +36,9 @@ export interface Extras {
   dir: string;
   git: GitInfo | null;
   tools: number;
+  todos: { done: number; total: number } | null;
+  quota: string | null; // đã format sẵn (vd "⏳ 3h 12m left (40% used)")
+  plan: string | null;
 }
 
 // Đệm autocompact — khớp cách Claude Code tính % trong /context.
@@ -79,8 +83,12 @@ function ctxLabel(size: number): string {
 }
 
 /**
- * Render statusline (PURE). Dòng 1 từ `input`; dòng 2 (dir/git/tools) từ `extras`.
+ * Render statusline (PURE). Dòng 1 từ `input`; dòng 2-3 từ `extras`.
  * Không truyền extras => chỉ render dòng 1.
+ * Layout 3 dòng ngang statusline.cjs:
+ *   L1: dot model (label) · bar % · ~tok · ⏳quota · $cost
+ *   L2: 📁 dir · 🌿 branch ↑↓ · 📋 plan
+ *   L3: 📝 +/- · ✅ todo · 🔧 tools
  */
 export function renderStatusline(
   input: StatuslineInput,
@@ -96,15 +104,16 @@ export function renderStatusline(
   const model = input.model?.display_name ?? input.model?.id ?? "Claude";
   const label = ctxLabel(size);
 
-  // Dòng 1: dot model (label) · bar pct% · ~Nk tok · $cost
+  // L1
   const l1: string[] = [`${dot} ${model}${label ? " " + label : ""}`];
   if (pct !== undefined) l1.push(`${bar(pct)} ${pct}%`);
   if (tokens > 0) l1.push(`~${Math.round(tokens / 1000)}k tok`);
+  if (extras?.quota) l1.push(extras.quota);
   if (input.cost?.total_cost_usd !== undefined) l1.push(`$${input.cost.total_cost_usd.toFixed(2)}`);
   const lines = [l1.join(" · ")];
 
-  // Dòng 2: 📁 dir · 🌿 branch ↑↓ · 📝 +/- · 🔧 tools
   if (extras) {
+    // L2: dir · branch · plan
     const l2: string[] = [`📁 ${homify(extras.dir)}`];
     if (extras.git?.branch) {
       let b = `🌿 ${extras.git.branch}`;
@@ -112,11 +121,17 @@ export function renderStatusline(
       if (extras.git.behind) b += ` ↓${extras.git.behind}`;
       l2.push(b);
     }
+    if (extras.plan) l2.push(`📋 ${extras.plan}`);
+    lines.push(l2.join(" · "));
+
+    // L3: diff · todo · tools (chỉ khi có ít nhất 1)
+    const l3: string[] = [];
     if (extras.git && (extras.git.added || extras.git.removed)) {
-      l2.push(`📝 +${extras.git.added} -${extras.git.removed}`);
+      l3.push(`📝 +${extras.git.added} -${extras.git.removed}`);
     }
-    if (extras.tools > 0) l2.push(`🔧 ${extras.tools} tools`);
-    if (l2.length > 1) lines.push(l2.join(" · "));
+    if (extras.todos) l3.push(`✅ ${extras.todos.done}/${extras.todos.total}`);
+    if (extras.tools > 0) l3.push(`🔧 ${extras.tools} tools`);
+    if (l3.length) lines.push(l3.join(" · "));
   }
 
   return lines.join("\n");
@@ -172,23 +187,24 @@ export function collectGit(cwd: string): GitInfo | null {
   return { branch, ahead, behind, added: unstaged.added + staged.added, removed: unstaged.removed + staged.removed };
 }
 
-/** Đếm tool_use trong transcript JSONL; cache theo mtime ở tmpdir để khỏi parse lại. */
-export function countTools(transcriptPath?: string): number {
-  if (!transcriptPath || !existsSync(transcriptPath)) return 0;
+/** Parse transcript JSONL: đếm tool_use + lấy TODO mới nhất. Cache theo mtime ở tmpdir. */
+export function parseTranscript(transcriptPath?: string): { tools: number; todos: { done: number; total: number } | null } {
+  if (!transcriptPath || !existsSync(transcriptPath)) return { tools: 0, todos: null };
   let mtime: number;
   try {
     mtime = statSync(transcriptPath).mtimeMs;
   } catch {
-    return 0;
+    return { tools: 0, todos: null };
   }
   const key = createHash("md5").update(transcriptPath).digest("hex").slice(0, 8);
   const cachePath = join(tmpdir(), `kt-tr-${key}.json`);
   try {
     const c = JSON.parse(readFileSync(cachePath, "utf8"));
-    if (c.mtime === mtime && typeof c.tools === "number") return c.tools;
+    if (c.mtime === mtime && typeof c.tools === "number") return { tools: c.tools, todos: c.todos ?? null };
   } catch {}
 
   let tools = 0;
+  let rawTodos: any[] | null = null;
   try {
     for (const line of readFileSync(transcriptPath, "utf8").split("\n")) {
       if (!line) continue;
@@ -200,17 +216,69 @@ export function countTools(transcriptPath?: string): number {
       }
       const content = evt?.message?.content;
       if (!Array.isArray(content)) continue;
-      for (const item of content) if (item?.type === "tool_use") tools += 1;
+      for (const item of content) {
+        if (item?.type !== "tool_use") continue;
+        tools += 1;
+        if (item.name === "TodoWrite" && Array.isArray(item.input?.todos)) rawTodos = item.input.todos;
+      }
     }
   } catch {}
 
+  const todos =
+    Array.isArray(rawTodos) && rawTodos.length
+      ? { done: rawTodos.filter((t) => t.status === "completed").length, total: rawTodos.length }
+      : null;
   try {
-    writeFileSync(cachePath, JSON.stringify({ mtime, tools }));
+    writeFileSync(cachePath, JSON.stringify({ mtime, tools, todos }));
   } catch {}
-  return tools;
+  return { tools, todos };
+}
+
+function fmtMsLeft(ms: number): string {
+  if (ms < 0) return "";
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m}m left`;
+  return `${Math.floor(m / 60)}h ${m % 60}m left`;
+}
+
+/** Quota 5h từ cache CK-stack (nếu có). `now` injectable để test. */
+export function readQuota(now: number = Date.now()): string | null {
+  try {
+    const q = JSON.parse(readFileSync(join(tmpdir(), "ck-usage-limits-cache.json"), "utf8"));
+    if (!q || q.status === "unavailable") return null;
+    const resetsAt = q.resets_at_ms ?? q.resetsAtMs;
+    const pct = q.percent_used ?? q.percentUsed;
+    if (!resetsAt) return null;
+    const lbl = fmtMsLeft(resetsAt - now);
+    if (!lbl) return null;
+    const tail = pct != null ? ` (${pct}% used)` : "";
+    return `⏳ ${lbl}${tail}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Active plan từ cache CK-stack theo session (nếu có). */
+export function readActivePlan(sessionId?: string): string | null {
+  if (!sessionId) return null;
+  try {
+    const st = JSON.parse(readFileSync(join(tmpdir(), `ck-session-${sessionId}.json`), "utf8"));
+    const p = st?.plan?.name ?? st?.activePlan ?? st?.plan ?? null;
+    return typeof p === "string" ? p : null;
+  } catch {
+    return null;
+  }
 }
 
 export function collectExtras(input: StatuslineInput): Extras {
   const dir = input.cwd || process.cwd();
-  return { dir, git: collectGit(dir), tools: countTools(input.transcript_path) };
+  const { tools, todos } = parseTranscript(input.transcript_path);
+  return {
+    dir,
+    git: collectGit(dir),
+    tools,
+    todos,
+    quota: readQuota(),
+    plan: readActivePlan(input.session_id),
+  };
 }
