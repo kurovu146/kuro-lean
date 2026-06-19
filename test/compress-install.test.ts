@@ -2,6 +2,20 @@ import { test, expect } from "bun:test";
 import { compressInstall } from "../src/compressors/install";
 import type { CompressInput } from "../src/compressors/types";
 
+test("install fail => GIỮ toàn bộ body lỗi", () => {
+  const input: CompressInput = {
+    stdout: [
+      "npm ERR! code E404",
+      "npm ERR! 404 Not Found - GET https://registry.npmjs.org/nope",
+      "npm ERR! 404 'nope@*' is not in this registry.",
+    ].join("\n"),
+    stderr: "", exitCode: 1, command: "npm install nope",
+  };
+  const r = compressInstall(input);
+  expect(r.text).toContain("npm ERR! code E404");
+  expect(r.text).toContain("not in this registry");
+});
+
 test("giữ dòng kết quả + warn, bỏ progress", () => {
   const input: CompressInput = {
     stdout: [

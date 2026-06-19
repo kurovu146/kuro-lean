@@ -5,6 +5,9 @@ const KEEP_RE = /\b(added|removed|changed|audited|packages|warn|error|deprecated
 export function compressInstall(input: CompressInput): CompressResult {
   const combined = joinOutput(input);
   const total = countLines(combined);
+  if (input.exitCode !== 0) {
+    return { text: combined, originalLines: total, compactLines: total, note: "install-fail-fallback" };
+  }
   const lines = combined.split("\n");
   const kept = lines.filter((l) => KEEP_RE.test(l));
   const lastLine = lines.at(-1);
