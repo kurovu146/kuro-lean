@@ -91,7 +91,9 @@ const RULES: Rule[] = [
   },
   {
     key: "treeNoDepth",
-    test: (c) => /\btree\b/.test(c) && !/-L\s*\d/.test(c),
+    // chỉ khớp khi `tree` là LỆNH (đầu câu hoặc sau | ; &) — tránh false-positive
+    // khi "tree" là đối số/chuỗi tìm kiếm, vd: grep "tree" src/
+    test: (c) => /(?:^|[|;&])\s*tree\b/.test(c) && !/-L\s*\d/.test(c),
     reason: "`tree` không giới hạn độ sâu. Thêm -L 2.",
   },
 ];

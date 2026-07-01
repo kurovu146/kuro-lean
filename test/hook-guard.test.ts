@@ -27,6 +27,18 @@ test("npm ls không depth => deny", () => {
 
 test("tree không -L => deny", () => {
   expect(decideGuard("tree", g).deny).toBe(true);
+  expect(decideGuard("cd src && tree", g).deny).toBe(true);
+  expect(decideGuard("ls | tree", g).deny).toBe(true);
+});
+
+test("tree có -L => allow", () => {
+  expect(decideGuard("tree -L 2", g).deny).toBe(false);
+});
+
+test('"tree" là đối số/chuỗi => allow (không false-positive)', () => {
+  expect(decideGuard('grep -rln "tree" src/', g).deny).toBe(false);
+  expect(decideGuard("cat tree-sitter.json", g).deny).toBe(false);
+  expect(decideGuard("echo subtree", g).deny).toBe(false);
 });
 
 test("lệnh an toàn => allow", () => {
