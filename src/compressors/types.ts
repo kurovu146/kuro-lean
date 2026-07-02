@@ -39,8 +39,13 @@ export function countLines(s: string): number {
  */
 export function capChars(text: string, maxChars: number): string {
   if (maxChars <= 0 || text.length <= maxChars) return text;
-  const head = Math.floor(maxChars * 0.65);
-  const tail = maxChars - head;
-  const hiddenKb = Math.round((text.length - maxChars) / 1024);
-  return `${text.slice(0, head)}\n… [đã cắt ~${hiddenKb}KB — kt show] …\n${text.slice(-tail)}`;
+  let head = Math.floor(maxChars * 0.65);
+  // không cắt giữa surrogate pair (emoji/ký tự astral) → lùi/tiến 1 đơn vị
+  const c = text.charCodeAt(head - 1);
+  if (c >= 0xd800 && c <= 0xdbff) head -= 1;
+  let cutStart = text.length - (maxChars - head);
+  const t = text.charCodeAt(cutStart);
+  if (t >= 0xdc00 && t <= 0xdfff) cutStart += 1;
+  const hiddenKb = Math.round((cutStart - head) / 1024);
+  return `${text.slice(0, head)}\n… [đã cắt ~${hiddenKb}KB — kt show] …\n${text.slice(cutStart)}`;
 }

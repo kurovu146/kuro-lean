@@ -36,6 +36,20 @@ test("appendMeta: vượt maxLines => trim còn keepLines dòng cuối", () => {
   expect(all.at(-1)!.id).toBe("11"); // bản mới nhất luôn còn
 });
 
+test("readMeta: bỏ entry thiếu/sai kiểu field số => stats không bao giờ NaN", () => {
+  rmSync(ROOT, { recursive: true, force: true });
+  appendMeta(meta(), { root: ROOT });
+  // schema drift: thiếu field số / field số bị ghi thành chuỗi
+  appendFileSync(`${ROOT}/index.jsonl`, JSON.stringify({ id: "x", command: "c", profile: "generic" }) + "\n");
+  appendFileSync(
+    `${ROOT}/index.jsonl`,
+    JSON.stringify({ id: "y", command: "c", profile: "generic", originalChars: "9", compactChars: 1 }) + "\n",
+  );
+  const all = readMeta(ROOT);
+  expect(all.length).toBe(1);
+  expect(renderStats(all)).not.toContain("NaN");
+});
+
 test("renderStats: rỗng => thông báo, không crash", () => {
   expect(renderStats([])).toContain("chưa có dữ liệu");
 });

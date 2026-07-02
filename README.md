@@ -29,6 +29,9 @@ kt doctor           # verify the setup
 - `kt init` also adds `Bash(kt run:*)` to `permissions.allow` (so rewritten commands don't re-prompt)
   and installs the `concise-output` skill into `~/.claude/skills/` (trims the model's own output —
   the most expensive tokens). Neither overwrites existing user versions.
+- **Trade-off to know:** `Bash(kt run:*)` is a wildcard — anything invoked *through* `kt run` is
+  auto-approved (its output still goes through the compressor + char cap, so the token risk stays
+  neutralized). If you want per-command prompting instead, remove that entry from `permissions.allow`.
 
 ## Compatibility with AI tools
 

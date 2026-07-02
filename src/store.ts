@@ -15,7 +15,11 @@ export interface RunMeta {
 const META_MAX_LINES = 2000;
 const META_KEEP_LINES = 1000;
 
-/** Ghi 1 dòng metadata cho run vào <root>/index.jsonl (nguồn dữ liệu của `kt stats`). */
+/**
+ * Ghi 1 dòng metadata cho run vào <root>/index.jsonl (nguồn dữ liệu của `kt stats`).
+ * Best-effort: bước trim là read-modify-write không atomic — 2 kt run song song có thể
+ * làm rơi vài dòng thống kê. Chấp nhận được vì đây chỉ là số liệu, không phải log gốc.
+ */
 export function appendMeta(
   entry: RunMeta,
   opts: { root?: string; maxLines?: number; keepLines?: number } = {},
@@ -40,7 +44,10 @@ export function readMeta(root: string = DEFAULT_ROOT): RunMeta[] {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
-      if (e && typeof e.id === "string") out.push(e);
+      // field số phải là số thật — 1 entry lệch shape (schema drift/ghi dở) sẽ làm cả stats thành NaN
+      if (e && typeof e.id === "string" && Number.isFinite(e.originalChars) && Number.isFinite(e.compactChars)) {
+        out.push(e);
+      }
     } catch {
       // dòng hỏng → bỏ
     }

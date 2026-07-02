@@ -21,6 +21,23 @@ test("capChars: vượt trần => giữ đầu + cuối + marker kt show", () =>
   expect(out).toContain("kt show");
 });
 
+test("capChars: không cắt giữa surrogate pair (emoji) => không sinh lone surrogate", () => {
+  const hasLoneSurrogate = (s: string): boolean => {
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff) {
+        const n = s.charCodeAt(i + 1);
+        if (!(n >= 0xdc00 && n <= 0xdfff)) return true;
+        i++;
+      } else if (c >= 0xdc00 && c <= 0xdfff) return true;
+    }
+    return false;
+  };
+  const text = "😀".repeat(10_000); // mỗi emoji = 2 code unit
+  const out = capChars(text, 8_001); // trần lẻ → điểm cắt rơi giữa pair nếu không chỉnh
+  expect(hasLoneSurrogate(out)).toBe(false);
+});
+
 test("compress: 1 dòng khổng lồ lọt qua generic (1 dòng ≤ thresholdLines) vẫn bị cap", () => {
   const input: CompressInput = { stdout: "x".repeat(100_000), stderr: "", exitCode: 0, command: "curl api" };
   const r = compress("generic", input, defaultConfig);

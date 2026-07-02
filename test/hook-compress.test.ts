@@ -36,13 +36,13 @@ test("KT_DISABLE=1 => null (kill-switch)", () => {
   }
 });
 
-test("env-prefix => wrap qua bash -lc (spawn array không hiểu FOO=1)", () => {
-  expect(decideCompress("GIT_PAGER=cat git diff")).toBe("kt run -- bash -lc 'GIT_PAGER=cat git diff'");
-  expect(decideCompress("CI=1 npm test")).toBe("kt run -- bash -lc 'CI=1 npm test'");
+test("env-prefix => wrap qua bash -c (spawn array không hiểu FOO=1)", () => {
+  expect(decideCompress("GIT_PAGER=cat git diff")).toBe("kt run -- bash -c 'GIT_PAGER=cat git diff'");
+  expect(decideCompress("CI=1 npm test")).toBe("kt run -- bash -c 'CI=1 npm test'");
 });
 
-test("2>&1 (idiom phổ biến của agent) => wrap qua bash -lc", () => {
-  expect(decideCompress("npm test 2>&1")).toBe("kt run -- bash -lc 'npm test 2>&1'");
+test("2>&1 (idiom phổ biến của agent) => wrap qua bash -c", () => {
+  expect(decideCompress("npm test 2>&1")).toBe("kt run -- bash -c 'npm test 2>&1'");
 });
 
 test("2>&1 nhưng vẫn còn pipe/redirect khác => null", () => {
@@ -50,9 +50,9 @@ test("2>&1 nhưng vẫn còn pipe/redirect khác => null", () => {
   expect(decideCompress("npm test 2>&1 > out.txt")).toBeNull();
 });
 
-test("bash -lc escape nháy đơn trong lệnh", () => {
+test("bash -c escape nháy đơn trong lệnh", () => {
   expect(decideCompress("CI=1 bun test --filter 'auth'")).toBe(
-    "kt run -- bash -lc 'CI=1 bun test --filter '\\''auth'\\'''",
+    "kt run -- bash -c 'CI=1 bun test --filter '\\''auth'\\'''",
   );
 });
 
