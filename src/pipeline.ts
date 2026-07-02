@@ -2,7 +2,7 @@ import { run } from "./runner";
 import { detect } from "./detect";
 import { compress } from "./compressors";
 import { joinOutput, countLines } from "./compressors/types";
-import { saveRun } from "./store";
+import { saveRun, appendMeta } from "./store";
 import type { Config } from "./config";
 
 export async function runAndCompress(
@@ -14,14 +14,19 @@ export async function runAndCompress(
   const res = await run(argv);
   const command = argv.join(" ");
   const input = { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, command };
-  const result = compress(detect(command), input, config);
+  const profile = detect(command);
+  const result = compress(profile, input, config);
 
   const id = idFactory();
   const full = joinOutput(input);
   try {
     saveRun(id, full, { keep: config.store.keepRuns, root: storeRoot });
+    appendMeta(
+      { id, command, profile, originalChars: full.length, compactChars: result.text.length },
+      { root: storeRoot },
+    );
   } catch {
-    // ghi full thất bại: vẫn in compact
+    // ghi full/meta thất bại: vẫn in compact
   }
   const saved = countLines(full) - result.compactLines;
   const footer = saved > 0 ? `\n↳ ${saved} dòng đã nén · full: kt show ${id}` : "";

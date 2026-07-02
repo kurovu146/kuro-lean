@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { runAndCompress } from "./pipeline";
 import { renderStatusline, collectExtras, type StatuslineInput } from "./statusline";
-import { showRun } from "./store";
+import { showRun, readMeta } from "./store";
+import { renderStats } from "./stats";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
@@ -79,6 +80,10 @@ async function main() {
       process.stdout.write(out ?? "(không có log)\n");
       return;
     }
+    case "stats": {
+      process.stdout.write(renderStats(readMeta()));
+      return;
+    }
     case "init": {
       const { installSettings, installSkill } = await import("./init");
       const { homedir } = await import("os");
@@ -100,7 +105,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|init|hook-compress|hook-guard|show|doctor>\n");
+      process.stdout.write("kt <run|status|stats|init|hook-compress|hook-guard|show|doctor>\n");
   }
 }
 
