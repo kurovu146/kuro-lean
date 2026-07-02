@@ -17,3 +17,11 @@ test("kt.json override merge nông", () => {
   expect(loadConfig(DIR).generic.thresholdLines).toBe(5);
   expect(loadConfig(DIR).store.keepRuns).toBe(defaultConfig.store.keepRuns);
 });
+
+test("limits.maxChars: có default và merge được từ kt.json", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  expect(defaultConfig.limits.maxChars).toBe(16_000);
+  writeFileSync(`${DIR}/kt.json`, JSON.stringify({ limits: { maxChars: 5_000 } }));
+  expect(loadConfig(DIR).limits.maxChars).toBe(5_000);
+});
