@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "fs";
-import { installSettings, runDoctor } from "../src/init";
+import { installSettings, installSkill, runDoctor } from "../src/init";
 
 const DIR = "/tmp/kt-test-init";
 const settings = `${DIR}/settings.json`;
@@ -59,6 +59,54 @@ test("giữ nguyên hook/config có sẵn của user", () => {
   expect(cfg.env.FOO).toBe("bar");
   expect(JSON.stringify(cfg.hooks.PreToolUse)).toContain("my-hook");
   expect(existsSync(`${settings}.bak`)).toBe(true);
+});
+
+test("thêm Bash(kt run:*) vào permissions.allow, giữ allow có sẵn", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }));
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  expect(cfg.permissions.allow).toContain("Bash(kt run:*)");
+  expect(cfg.permissions.allow).toContain("Bash(ls:*)");
+  // idempotent: chạy lại không nhân đôi
+  installSettings(settings, "kt");
+  const again = JSON.parse(readFileSync(settings, "utf8"));
+  expect(again.permissions.allow.filter((p: string) => p === "Bash(kt run:*)").length).toBe(1);
+});
+
+test("installSkill: copy vào <skills>/concise-output/SKILL.md, idempotent", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  const skillsDir = `${DIR}/skills`;
+  const r1 = installSkill(skillsDir, "skills/concise-output.md");
+  expect(r1.changed).toBe(true);
+  expect(readFileSync(`${skillsDir}/concise-output/SKILL.md`, "utf8")).toContain("concise-output");
+  const r2 = installSkill(skillsDir, "skills/concise-output.md");
+  expect(r2.changed).toBe(false);
+});
+
+test("installSkill: user đã có skill (kể cả custom) => KHÔNG ghi đè", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  const skillsDir = `${DIR}/skills`;
+  mkdirSync(`${skillsDir}/concise-output`, { recursive: true });
+  writeFileSync(`${skillsDir}/concise-output/SKILL.md`, "custom của anh");
+  const r = installSkill(skillsDir, "skills/concise-output.md");
+  expect(r.changed).toBe(false);
+  expect(readFileSync(`${skillsDir}/concise-output/SKILL.md`, "utf8")).toBe("custom của anh");
+});
+
+test("runDoctor: báo trạng thái permission kt run + skill concise-output", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(`${DIR}/.claude/skills/concise-output`, { recursive: true });
+  writeFileSync(
+    `${DIR}/.claude/settings.json`,
+    JSON.stringify({ permissions: { allow: ["Bash(kt run:*)"] } }),
+  );
+  writeFileSync(`${DIR}/.claude/skills/concise-output/SKILL.md`, "x");
+  const out = runDoctor(DIR);
+  expect(out).toMatch(/permission kt run:\s+✓/);
+  expect(out).toMatch(/skill concise-output:\s+✓/);
 });
 
 test("settings.json hỏng => installSettings báo lỗi rõ, KHÔNG ghi đè", () => {

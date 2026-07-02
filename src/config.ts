@@ -24,7 +24,7 @@ export const defaultConfig: Config = {
   limits: { maxChars: 16_000 }, // ~4k token; chốt chặn sau mọi compressor
   store: { keepRuns: 50 },
   statusline: { warnPct: 60, dangerPct: 85 },
-  guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, catBig: true, readNoise: true } },
+  guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, gitLogP: true, catBig: true, readNoise: true } },
 };
 
 export function loadConfig(cwd: string = process.cwd()): Config {

@@ -80,12 +80,18 @@ async function main() {
       return;
     }
     case "init": {
-      const { installSettings } = await import("./init");
+      const { installSettings, installSkill } = await import("./init");
       const { homedir } = await import("os");
       const { join } = await import("path");
       const settingsPath = join(homedir(), ".claude", "settings.json");
       const r = installSettings(settingsPath, "kt");
       process.stdout.write(r.changed ? `✓ đã cài vào ${settingsPath}${r.backup ? ` (backup: ${r.backup})` : ""}\n` : "✓ đã cài sẵn, không đổi gì\n");
+      try {
+        const s = installSkill(join(homedir(), ".claude", "skills"), join(import.meta.dir, "..", "skills", "concise-output.md"));
+        process.stdout.write(s.changed ? "✓ đã cài skill concise-output (giảm output token)\n" : "✓ skill concise-output đã có, không đổi gì\n");
+      } catch (e: any) {
+        process.stderr.write(`⚠ không cài được skill concise-output: ${e?.message ?? e}\n`);
+      }
       return;
     }
     case "doctor": {

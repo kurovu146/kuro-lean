@@ -90,6 +90,13 @@ const RULES: Rule[] = [
     reason: "`npm ls` in cả cây phụ thuộc. Thêm --depth=0 cho gọn.",
   },
   {
+    key: "gitLogP",
+    // `git log` phải ở vị trí LỆNH (đầu câu hoặc sau | ; &) — tránh false-positive khi
+    // "git log -p" nằm trong chuỗi, vd commit message nói về chính rule này.
+    test: (c) => /(?:^|[|;&])\s*git\s+log\b/.test(c) && /(^|\s)(-p|--patch)(\s|$)/.test(c),
+    reason: "`git log -p` đổ full patch của mọi commit → ngốn token. Dùng git log --oneline rồi git show <sha> -- <file> khi cần đọc 1 thay đổi.",
+  },
+  {
     key: "treeNoDepth",
     // chỉ khớp khi `tree` là LỆNH (đầu câu hoặc sau | ; &) — tránh false-positive
     // khi "tree" là đối số/chuỗi tìm kiếm, vd: grep "tree" src/

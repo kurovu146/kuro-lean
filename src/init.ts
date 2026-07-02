@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
 
 interface HookEntry { type: "command"; command: string }
 interface Matcher { matcher: string; hooks: HookEntry[] }
@@ -48,6 +48,13 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
   ensureMatcher(settings.hooks.PreToolUse, "Bash", [`${ktBin} hook-guard`, `${ktBin} hook-compress`]);
   ensureMatcher(settings.hooks.PreToolUse, "Read", [`${ktBin} hook-guard`]);
 
+  // permissions.allow: lệnh sau rewrite là `kt run -- ...` nên allowlist cũ (vd Bash(bun test:*))
+  // không khớp nữa → tự thêm để user khỏi bị prompt lại sau mỗi lần wrap.
+  settings.permissions ??= {};
+  settings.permissions.allow ??= [];
+  const perm = `Bash(${ktBin} run:*)`;
+  if (!settings.permissions.allow.includes(perm)) settings.permissions.allow.push(perm);
+
   const after = JSON.stringify(settings);
   if (after === before) return { changed: false };
 
@@ -58,6 +65,18 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
   }
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   return { changed: true, backup };
+}
+
+/**
+ * Cài skill concise-output vào skills dir của Claude Code (giảm output token của model).
+ * KHÔNG ghi đè nếu user đã có skill cùng tên (kể cả bản custom) — giống chính sách statusLine.
+ */
+export function installSkill(skillsDir: string, sourcePath: string): { changed: boolean } {
+  const target = join(skillsDir, "concise-output", "SKILL.md");
+  if (existsSync(target)) return { changed: false };
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(sourcePath, target);
+  return { changed: true };
 }
 
 export function runDoctor(home: string = homedir()): string {
@@ -74,10 +93,14 @@ export function runDoctor(home: string = homedir()): string {
     }
     const hasStatus = String(cfg.statusLine?.command ?? "").includes("kt status");
     const cmds = (cfg.hooks?.PreToolUse ?? []).flatMap((m: Matcher) => m.hooks?.map((h) => h.command) ?? []);
+    const allow: string[] = cfg.permissions?.allow ?? [];
     lines.push(`statusLine kt: ${hasStatus ? "✓" : "✗"}`);
     lines.push(`hook-guard:    ${cmds.includes("kt hook-guard") ? "✓" : "✗"}`);
     lines.push(`hook-compress: ${cmds.includes("kt hook-compress") ? "✓" : "✗"}`);
+    lines.push(`permission kt run: ${allow.includes("Bash(kt run:*)") ? "✓" : "✗ (thiếu Bash(kt run:*) trong permissions.allow)"}`);
   }
+  const skillPath = join(home, ".claude", "skills", "concise-output", "SKILL.md");
+  lines.push(`skill concise-output: ${existsSync(skillPath) ? "✓" : "✗ (chạy kt init)"}`);
   lines.push(`bun: ${Bun.version}`);
   return lines.join("\n") + "\n";
 }
