@@ -2,7 +2,15 @@ import { test, expect } from "bun:test";
 import { decideCompress } from "../src/hooks/compress";
 
 test("lệnh test => rewrite sang kt run", () => {
-  expect(decideCompress("npm test")).toBe("kt run -- npm test");
+  // cô lập: nếu env kế thừa KT_DISABLE=1 (vd chạy `KT_DISABLE=1 bun test`)
+  // kill-switch sẽ trả null → test này fail nhầm. Tạm gỡ để kiểm hành vi mặc định.
+  const saved = process.env.KT_DISABLE;
+  delete process.env.KT_DISABLE;
+  try {
+    expect(decideCompress("npm test")).toBe("kt run -- npm test");
+  } finally {
+    if (saved !== undefined) process.env.KT_DISABLE = saved;
+  }
 });
 
 test("đã là kt => bỏ qua", () => {
