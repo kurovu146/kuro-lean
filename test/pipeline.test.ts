@@ -18,3 +18,11 @@ test("exit code khác 0 được truyền ra", async () => {
   const r = await runAndCompress(["sh", "-c", "exit 7"], defaultConfig, () => "pipe002", ROOT);
   expect(r.exitCode).toBe(7);
 });
+
+test("run.timeoutMs từ config được áp: lệnh chậm bị kill + báo timeout", async () => {
+  const cfg = { ...defaultConfig, run: { timeoutMs: 150 } };
+  const start = performance.now();
+  const r = await runAndCompress(["sleep", "5"], cfg, () => "pipe003", ROOT);
+  expect(performance.now() - start).toBeLessThan(3_000); // không chờ hết 5s
+  expect(r.compact).toContain("timeout");
+});

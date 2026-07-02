@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { detect } from "../src/detect";
+import { detect, type Profile } from "../src/detect";
 
 test.each([
   ["npm test", "test"],
@@ -34,5 +34,5 @@ test.each([
   ["ls -la", "generic"],
   ["echo hi", "generic"],
 ])("detect(%s) => %s", (cmd, expected) => {
-  expect(detect(cmd as string)).toBe(expected);
+  expect(detect(cmd as string)).toBe(expected as Profile);
 });

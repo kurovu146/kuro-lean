@@ -2,9 +2,16 @@
   "name": "kuro-lean",
   "version": "0.2.0",
   "type": "module",
-  "bin": { "kt": "./src/cli.ts" },
+  "bin": {
+    "kt": "./src/cli.ts"
+  },
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "kt": "bun run src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
   }
 }

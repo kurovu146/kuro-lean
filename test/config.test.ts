@@ -18,6 +18,14 @@ test("kt.json override merge nông", () => {
   expect(loadConfig(DIR).store.keepRuns).toBe(defaultConfig.store.keepRuns);
 });
 
+test("run.timeoutMs: có default 120s và merge được từ kt.json", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  expect(defaultConfig.run.timeoutMs).toBe(120_000);
+  writeFileSync(`${DIR}/kt.json`, JSON.stringify({ run: { timeoutMs: 300_000 } }));
+  expect(loadConfig(DIR).run.timeoutMs).toBe(300_000);
+});
+
 test("limits.maxChars: có default và merge được từ kt.json", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });

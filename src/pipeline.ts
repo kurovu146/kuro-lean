@@ -11,7 +11,7 @@ export async function runAndCompress(
   idFactory: () => string,
   storeRoot?: string,
 ): Promise<{ compact: string; exitCode: number }> {
-  const res = await run(argv);
+  const res = await run(argv, config.run.timeoutMs);
   const command = argv.join(" ");
   const input = { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, command };
   const profile = detect(command);

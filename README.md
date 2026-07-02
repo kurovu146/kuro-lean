@@ -26,8 +26,9 @@ kt doctor           # verify the setup
 
 - `kt init` **never overwrites** a custom status line — it only sets `kt status` if you don't have one
   yet. It writes a `.bak` backup before changing anything and is idempotent.
-- After install, matching commands are rewritten to `kt run -- ...`. Add `Bash(kt run:*)` to
-  `permissions.allow` (or click "always allow" the first time) so you aren't prompted.
+- `kt init` also adds `Bash(kt run:*)` to `permissions.allow` (so rewritten commands don't re-prompt)
+  and installs the `concise-output` skill into `~/.claude/skills/` (trims the model's own output —
+  the most expensive tokens). Neither overwrites existing user versions.
 
 ## Compatibility with AI tools
 
@@ -76,6 +77,9 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 
 - `kt run -- <cmd>` — run the command, print the compressed output, save the full log.
 - `kt show [id]` — view the full log (latest run if no id).
+- `kt stats` — savings report from real usage: total % saved (~tokens) + top commands still
+  occupying context after compression (candidates for new patterns/guards). Data comes from
+  `.kt/runs/index.jsonl`, one line per run, auto-trimmed.
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
@@ -90,18 +94,28 @@ untouched to avoid destroying signal):
 
 | Profile | Behavior |
 |---------|----------|
-| **test** | pass → print only the summary line; **fail → keep everything from the first failure marker onward** (Expected/Received + stack trace), exit code preserved |
+| **test** | pass → print only the summary line; **fail → keep everything from the first failure marker onward** (Expected/Received + stack trace), exit code preserved. Runs of ≥2 consecutive stack frames pointing into `node_modules`/`node:*` collapse to one `… (N lib frames hidden)` line — your own frames stay intact |
 | **build** | OK → `✓ build OK`; otherwise → keep only `error`/`warning` lines |
+| **lint** | `eslint`, `golangci-lint`, `<pm> run lint` — same as build: clean → 1 line, otherwise error/warning lines only |
 | **install** | keep `added/removed/audited/vulnerabilit…` lines; on failure keep full output |
 | **git** | `git diff` ≤ 40 lines kept as-is (the agent usually wants to *read* it); larger diffs → `path +adds -dels` per file. `git status`/`log` handled as generic |
 | **generic** | > 40 lines → keep first 15 + last 10, hide the middle (`… [N lines hidden — kt show] …`) |
+
+Package-manager scripts are recognized too: `npm/pnpm/yarn/bun run test|build|lint` (and the
+no-`run` variants) map to their profile.
+
+**Absolute char cap (`limits.maxChars`, default 16,000 ≈ 4k tokens):** applied *after* every
+profile — including fallbacks. Catches what line-counting misses (a single giant minified/JSON
+line, a huge failing suite): keeps 65% head + 35% tail with a `… [cut ~N KB — kt show] …` marker.
+Set to `0` to disable.
 
 ## Guard — block token-hungry calls before they run
 
 A `PreToolUse` hook denies calls that would dump noise into the context, with a helpful reason:
 
-- **Bash**: `find /` (whole-disk scan), `npm ls` without `--depth`, `tree` without `-L`, and
-  `cat <file>` larger than `guard.maxCatKb` (default 100 KB).
+- **Bash**: `find /` (whole-disk scan), `npm ls` without `--depth`, `tree` without `-L`,
+  `git log` with `-p`/`--patch` (full patch of every commit — use `git log --oneline` +
+  `git show <sha> -- <file>`), and `cat <file>` larger than `guard.maxCatKb` (default 100 KB).
 - **Read** (`readNoise`): reading a whole **noise file** — lock files (`package-lock.json`,
   `yarn.lock`, `bun.lockb`, `go.sum`, `Cargo.lock`…), minified/generated (`*.min.js`, `*.min.css`,
   `*.map`), files under `node_modules/`/`dist/`/`build/`/`.next/`/`vendor/`/`coverage/`, or any file
@@ -114,10 +128,13 @@ files. `KT_DISABLE=1` turns the guard off too.
 ## Safety guarantees
 
 - **Watch / dev commands** (`yarn dev`, `tsc --watch`, `vitest watch`, …) are **not** wrapped, so they
-  never hang the agent. `kt run` also enforces a 120s timeout — long-running commands are killed
-  instead of blocking forever, and whatever output was produced is still returned.
-- **Env-prefixed commands** (`GIT_PAGER=cat git diff`) and commands already containing `kt run` are
-  **not** rewritten, so bash keeps the correct semantics (no `ENOENT` from spawning `FOO=1` as a binary).
+  never hang the agent. `kt run` also enforces a timeout (`run.timeoutMs`, default 120s — raise it in
+  `kt.json` for slow e2e suites) — long-running commands are killed instead of blocking forever, and
+  whatever output was produced is still returned.
+- **Env-prefixed commands** (`GIT_PAGER=cat git diff`) and `2>&1` **are** compressed: they're wrapped
+  as `kt run -- bash -lc '<cmd>'` (single quotes escaped), so bash keeps the correct semantics.
+  Commands with real pipes/redirects/`&&` are still left untouched, as is anything already
+  containing `kt run`.
 - **Test/build failures are never compressed away** — the full error block and exit code are preserved.
 
 ## Measured results (measured on this repo, 2026-06-19)
@@ -144,11 +161,13 @@ Optional per-project `kt.json` (deep-merged over defaults):
 
 ```json
 {
-  "profiles": { "test": true, "build": true, "install": true, "git": true, "generic": true },
+  "profiles": { "test": true, "build": true, "install": true, "git": true, "lint": true, "generic": true },
   "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
+  "limits": { "maxChars": 16000 },
+  "run": { "timeoutMs": 120000 },
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
-  "guard": { "maxCatKb": 100, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "catBig": true } }
+  "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } }
 }
 ```
 
@@ -157,5 +176,9 @@ Full logs are stored under `.kt/runs/` (last `keepRuns` kept) — already in `.g
 ## Development
 
 ```bash
+bun install         # dev deps (typescript + @types/bun for typecheck)
 bun test            # run the test suite
+bun run typecheck   # tsc --noEmit
 ```
+
+CI (GitHub Actions) runs both on every push/PR to `main`.

@@ -1,7 +1,9 @@
 {
-  "profiles": { "test": true, "build": true, "install": true, "git": true, "generic": true },
+  "profiles": { "test": true, "build": true, "install": true, "git": true, "lint": true, "generic": true },
   "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
+  "limits": { "maxChars": 16000 },
+  "run": { "timeoutMs": 120000 },
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
-  "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "catBig": true, "readNoise": true } }
+  "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } }
 }
