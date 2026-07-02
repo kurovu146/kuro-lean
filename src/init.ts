@@ -1,6 +1,28 @@
-import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
+
+// Khớp cả lời gọi trực tiếp (`kt status`, `/path/to/kt status`) lẫn qua biến (`"$KT" status`).
+const KT_STATUS_RE = /(kt|\$\{?KT\}?)["']?\s+status\b/;
+
+/**
+ * statusLine có dùng kt không? Nhiều user wrap `kt status` trong script riêng
+ * (vd `bash ~/.claude/scripts/statusline.sh` nối thêm usage) → đọc nội dung
+ * file được tham chiếu trong command thay vì chỉ so chuỗi settings.json.
+ */
+function statusLineUsesKt(command: string, home: string): boolean {
+  if (KT_STATUS_RE.test(command)) return true;
+  for (const raw of command.split(/\s+/)) {
+    const tok = raw.replace(/^["']|["']$/g, "");
+    const p = tok.startsWith("~/") ? join(home, tok.slice(2)) : tok;
+    try {
+      if (existsSync(p) && statSync(p).isFile() && KT_STATUS_RE.test(readFileSync(p, "utf8"))) return true;
+    } catch {
+      // không đọc được → coi như không phải wrapper
+    }
+  }
+  return false;
+}
 
 interface HookEntry { type: "command"; command: string }
 interface Matcher { matcher: string; hooks: HookEntry[] }
@@ -91,7 +113,7 @@ export function runDoctor(home: string = homedir()): string {
       lines.push("⚠ settings.json không phải JSON hợp lệ — kiểm tra lại");
       return lines.join("\n") + "\n";
     }
-    const hasStatus = String(cfg.statusLine?.command ?? "").includes("kt status");
+    const hasStatus = statusLineUsesKt(String(cfg.statusLine?.command ?? ""), home);
     const cmds = (cfg.hooks?.PreToolUse ?? []).flatMap((m: Matcher) => m.hooks?.map((h) => h.command) ?? []);
     const allow: string[] = cfg.permissions?.allow ?? [];
     lines.push(`statusLine kt: ${hasStatus ? "✓" : "✗"}`);

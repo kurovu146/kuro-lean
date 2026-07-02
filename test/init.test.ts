@@ -109,6 +109,23 @@ test("runDoctor: báo trạng thái permission kt run + skill concise-output", (
   expect(out).toMatch(/skill concise-output:\s+✓/);
 });
 
+test("runDoctor: statusLine là wrapper script gọi kt status bên trong => ✓", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(`${DIR}/.claude`, { recursive: true });
+  mkdirSync(`${DIR}/scripts`, { recursive: true });
+  // giống statusline.sh thật: kt nằm trong biến, gọi qua "$KT" status
+  writeFileSync(
+    `${DIR}/scripts/statusline.sh`,
+    'KT="/Users/x/.bun/bin/kt"\nbase=$(printf \'%s\' "$input" | "$KT" status 2>/dev/null)\n',
+  );
+  writeFileSync(
+    `${DIR}/.claude/settings.json`,
+    JSON.stringify({ statusLine: { type: "command", command: "bash ~/scripts/statusline.sh" } }),
+  );
+  const out = runDoctor(DIR);
+  expect(out).toMatch(/statusLine kt:\s+✓/);
+});
+
 test("settings.json hỏng => installSettings báo lỗi rõ, KHÔNG ghi đè", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
