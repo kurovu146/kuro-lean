@@ -36,9 +36,36 @@ test("KT_DISABLE=1 => null (kill-switch)", () => {
   }
 });
 
-test("env-prefix => null (spawn array sẽ coi FOO=1 là binary)", () => {
-  expect(decideCompress("GIT_PAGER=cat git diff")).toBeNull();
-  expect(decideCompress("CI=1 npm test")).toBeNull();
+test("env-prefix => wrap qua bash -lc (spawn array không hiểu FOO=1)", () => {
+  expect(decideCompress("GIT_PAGER=cat git diff")).toBe("kt run -- bash -lc 'GIT_PAGER=cat git diff'");
+  expect(decideCompress("CI=1 npm test")).toBe("kt run -- bash -lc 'CI=1 npm test'");
+});
+
+test("2>&1 (idiom phổ biến của agent) => wrap qua bash -lc", () => {
+  expect(decideCompress("npm test 2>&1")).toBe("kt run -- bash -lc 'npm test 2>&1'");
+});
+
+test("2>&1 nhưng vẫn còn pipe/redirect khác => null", () => {
+  expect(decideCompress("npm test 2>&1 | tee log")).toBeNull();
+  expect(decideCompress("npm test 2>&1 > out.txt")).toBeNull();
+});
+
+test("bash -lc escape nháy đơn trong lệnh", () => {
+  expect(decideCompress("CI=1 bun test --filter 'auth'")).toBe(
+    "kt run -- bash -lc 'CI=1 bun test --filter '\\''auth'\\'''",
+  );
+});
+
+test("env-prefix + watch => vẫn null (wrap sẽ treo)", () => {
+  expect(decideCompress("CI=1 tsc --watch")).toBeNull();
+});
+
+test("env-prefix nhưng lệnh generic => null", () => {
+  expect(decideCompress("FOO=1 echo hi")).toBeNull();
+});
+
+test("lệnh lint => rewrite sang kt run", () => {
+  expect(decideCompress("eslint src")).toBe("kt run -- eslint src");
 });
 
 test("có `kt run` ở giữa (bypass thủ công) => null, tránh double-wrap", () => {

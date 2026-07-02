@@ -18,7 +18,7 @@ export interface Config {
 }
 
 export const defaultConfig: Config = {
-  profiles: { test: true, build: true, install: true, git: true, generic: true },
+  profiles: { test: true, build: true, install: true, git: true, lint: true, generic: true },
   generic: { thresholdLines: 40, headLines: 15, tailLines: 10 },
   store: { keepRuns: 50 },
   statusline: { warnPct: 60, dangerPct: 85 },

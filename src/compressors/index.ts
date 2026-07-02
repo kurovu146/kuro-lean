@@ -13,6 +13,7 @@ export function compress(profile: Profile, input: CompressInput, config: Config)
     switch (useProfile) {
       case "test": return compressTest(input);
       case "build": return compressBuild(input);
+      case "lint": return compressBuild(input); // linter cũng chỉ cần giữ error/warning
       case "install": return compressInstall(input);
       case "git": return compressGit(input, config.generic);
       default: return generic(input, config.generic);
