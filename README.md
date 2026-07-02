@@ -86,8 +86,10 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
-  - `📝 +/- · ✅ todo · 🔧 tools`
+  - `📝 +/- · ✅ todo · 🔧 tools · ♻️ ~saved`
   - ⏳quota + 📋plan + ✅todo come from the CK-stack cache / transcript when available; they auto-hide otherwise.
+  - ♻️ shows tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4); hidden until
+    the first compressed run.
 - `kt init` / `kt doctor` — install into / inspect Claude Code settings.
 
 ## How compression works

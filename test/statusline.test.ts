@@ -3,7 +3,9 @@ import { writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
-import { renderStatusline, collectGit, sessionCost, type Extras } from "../src/statusline";
+import { renderStatusline, collectGit, sessionCost, collectSavedTokens, type Extras } from "../src/statusline";
+import { appendMeta } from "../src/store";
+import { rmSync, mkdirSync } from "fs";
 
 const cfg = { warnPct: 60, dangerPct: 85 };
 
@@ -158,6 +160,60 @@ test("sessionCost: /clear (transcript đổi) => reset về 0", () => {
 
 test("sessionCost: không có cost => undefined (không hiện $)", () => {
   expect(sessionCost({ session_id: "sess-no-cost", transcript_path: "/tmp/x.jsonl" })).toBeUndefined();
+});
+
+test("savedTokens có giá trị => L3 hiện ♻️ ~Xk saved", () => {
+  const extras: Extras = {
+    dir: "/tmp/x", git: null, tools: 3, todos: null, quota: null, plan: null,
+    savedTokens: 12_400,
+  };
+  const s = renderStatusline({ context_window: { used_percentage: 10, context_window_size: 200000 } }, cfg, extras);
+  const l3 = s.split("\n")[2];
+  expect(l3).toContain("♻️ ~12k saved");
+});
+
+test("savedTokens nhỏ hơn 1000 => hiện số thô; 0/null => ẩn", () => {
+  const base: Extras = { dir: "/tmp/x", git: null, tools: 3, todos: null, quota: null, plan: null };
+  const sSmall = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    { ...base, savedTokens: 800 },
+  );
+  expect(sSmall).toContain("♻️ ~800 saved");
+  const sZero = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    { ...base, savedTokens: 0 },
+  );
+  expect(sZero).not.toContain("saved");
+  const sNull = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    base,
+  );
+  expect(sNull).not.toContain("saved");
+});
+
+test("collectSavedTokens: đọc index.jsonl của project, quy ra token (chars/4)", () => {
+  const dir = "/tmp/kt-test-saved-tokens";
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  appendMeta(
+    { id: "a", command: "npm test", profile: "test", originalChars: 8_000, compactChars: 4_000 },
+    { root: `${dir}/.kt/runs` },
+  );
+  appendMeta(
+    { id: "b", command: "git diff", profile: "git", originalChars: 6_000, compactChars: 2_000 },
+    { root: `${dir}/.kt/runs` },
+  );
+  expect(collectSavedTokens(dir)).toBe(2_000); // (4000+4000)/4
+});
+
+test("collectSavedTokens: chưa có dữ liệu => null (auto-hide)", () => {
+  const dir = "/tmp/kt-test-saved-tokens-empty";
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  expect(collectSavedTokens(dir)).toBeNull();
 });
 
 test("collectGit trên repo này trả branch", () => {

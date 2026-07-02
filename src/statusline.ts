@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
+import { readMeta } from "./store";
 
 export interface StatuslineInput {
   cwd?: string;
@@ -40,6 +41,7 @@ export interface Extras {
   quota: string | null; // đã format sẵn (vd "⏳ 3h 12m left (40% used)")
   plan: string | null;
   cost?: number | null; // cost của riêng phiên hiện tại (reset khi /clear); undefined => fallback input.cost
+  savedTokens?: number | null; // token kt đã tiết kiệm (từ .kt/runs/index.jsonl); null/0 => ẩn
 }
 
 // Đệm autocompact — khớp cách Claude Code tính % trong /context.
@@ -136,6 +138,10 @@ export function renderStatusline(
     }
     if (extras.todos) l3.push(`✅ ${extras.todos.done}/${extras.todos.total}`);
     if (extras.tools > 0) l3.push(`🔧 ${extras.tools} tools`);
+    if (extras.savedTokens) {
+      const t = extras.savedTokens;
+      l3.push(`♻️ ~${t >= 1000 ? `${Math.round(t / 1000)}k` : t} saved`);
+    }
     if (l3.length) lines.push(l3.join(" · "));
   }
 
@@ -319,6 +325,21 @@ export function sessionCost(input: StatuslineInput): number | undefined {
   return 0;
 }
 
+/**
+ * Token kt đã tiết kiệm cho project này (đọc .kt/runs/index.jsonl — cùng nguồn với `kt stats`).
+ * index.jsonl tự trim nên đây là "tiết kiệm gần đây", không phải per-session. Token ≈ chars/4.
+ */
+export function collectSavedTokens(cwd: string): number | null {
+  try {
+    const entries = readMeta(join(cwd, ".kt", "runs"));
+    if (entries.length === 0) return null;
+    const chars = entries.reduce((s, e) => s + Math.max(0, e.originalChars - e.compactChars), 0);
+    return Math.round(chars / 4);
+  } catch {
+    return null;
+  }
+}
+
 export function collectExtras(input: StatuslineInput): Extras {
   const dir = input.cwd || process.cwd();
   const { tools, todos } = parseTranscript(input.transcript_path);
@@ -330,5 +351,6 @@ export function collectExtras(input: StatuslineInput): Extras {
     quota: readQuota(),
     plan: readActivePlan(input.session_id),
     cost: sessionCost(input),
+    savedTokens: collectSavedTokens(dir),
   };
 }
