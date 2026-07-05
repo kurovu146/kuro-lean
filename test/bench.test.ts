@@ -136,3 +136,40 @@ test("parseBenchFlags: defaults + override", () => {
   const o = parseBenchFlags(["--runs", "5", "--model", "sonnet", "--keep", "--max-turns", "20"]);
   expect(o).toEqual({ runs: 5, model: "sonnet", keep: true, maxTurns: 20 });
 });
+
+// ---------- runBench (fake spawn — không tốn quota) ----------
+
+import { runBench, type SpawnFn } from "../src/bench";
+
+test("runBench: 2 arm × N runs, env đúng theo arm, report từ metrics fake", async () => {
+  const calls: { argv: string[]; cwd: string; env: Record<string, string | undefined> }[] = [];
+  const fakeResult = (cost: number) => JSON.stringify({
+    type: "result", is_error: false, total_cost_usd: cost, duration_ms: 30000, num_turns: 6,
+    usage: { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 50000, cache_creation_input_tokens: 2000 },
+  });
+  const fake: SpawnFn = async (argv, opts) => {
+    calls.push({ argv, cwd: opts.cwd, env: opts.env });
+    if (argv[0] === "claude") {
+      // baseline đắt hơn kt để Δ âm
+      return { stdout: fakeResult(opts.env.KT_DISABLE === "1" ? 0.2 : 0.1), exitCode: 0 };
+    }
+    return { stdout: "", exitCode: 0 }; // gate `bun test` xanh
+  };
+  const report = await runBench({ runs: 2, model: "claude-haiku-4-5-20251001", keep: false, maxTurns: 15 }, fake);
+  const claudeCalls = calls.filter((c) => c.argv[0] === "claude");
+  expect(claudeCalls.length).toBe(4); // 2 arm × 2 runs
+  expect(claudeCalls.filter((c) => c.env.KT_DISABLE === "1").length).toBe(2); // baseline
+  const gateCalls = calls.filter((c) => c.argv[0] === "bun");
+  expect(gateCalls.length).toBe(4); // mỗi run 1 lần gate
+  expect(report).toContain("baseline 2/2, kt 2/2");
+  expect(report).toContain("-50%"); // cost 0.2 → 0.1
+});
+
+test("runBench: claude lỗi hoặc gate đỏ => run không hợp lệ", async () => {
+  const fake: SpawnFn = async (argv) => {
+    if (argv[0] === "claude") return { stdout: "boom", exitCode: 1 };
+    return { stdout: "", exitCode: 1 };
+  };
+  const report = await runBench({ runs: 1, model: "m", keep: false, maxTurns: 15 }, fake);
+  expect(report).toContain("baseline 0/1, kt 0/1");
+});

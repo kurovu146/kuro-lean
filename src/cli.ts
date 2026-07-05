@@ -106,8 +106,23 @@ async function main() {
       process.stdout.write(runDoctor());
       return;
     }
+    case "bench": {
+      const { runBench, parseBenchFlags, realSpawn } = await import("./bench");
+      const opts = parseBenchFlags(rest);
+      if (!Bun.which("claude")) {
+        process.stderr.write("kt bench cần `claude` CLI trên PATH.\n");
+        process.exit(1);
+      }
+      if (!Bun.which("kt")) {
+        process.stderr.write("⚠ `kt` không có trên PATH — arm kt sẽ không nén (hook gọi `kt`). Chạy `bun link` trước.\n");
+      }
+      process.stderr.write(`kt bench: 2 arms × ${opts.runs} runs, model ${opts.model} — chạy phiên Claude THẬT, tốn quota.\n`);
+      const report = await runBench(opts, realSpawn, (s) => process.stderr.write(s + "\n"));
+      process.stdout.write(report);
+      return;
+    }
     default:
-      process.stdout.write("kt <run|status|stats|init|hook-compress|hook-guard|show|doctor>\n");
+      process.stdout.write("kt <run|status|stats|init|hook-compress|hook-guard|show|doctor|bench>\n");
   }
 }
 

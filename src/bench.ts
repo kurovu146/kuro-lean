@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import { installSettings } from "./init";
 
@@ -247,4 +248,46 @@ export function parseBenchFlags(argv: string[]): BenchOptions {
     else if (a === "--keep") opts.keep = true;
   }
   return opts;
+}
+
+export type SpawnFn = (
+  argv: string[],
+  opts: { cwd: string; env: Record<string, string | undefined> },
+) => Promise<{ stdout: string; exitCode: number }>;
+
+export const realSpawn: SpawnFn = async (argv, opts) => {
+  const proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env as Record<string, string>, stdout: "pipe", stderr: "pipe" });
+  // đọc cả stderr để tránh nghẽn pipe khi output dài
+  const [stdout] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { stdout, exitCode: await proc.exited };
+};
+
+export async function runBench(
+  opts: BenchOptions,
+  spawn: SpawnFn = realSpawn,
+  log: (s: string) => void = () => {},
+): Promise<string> {
+  const root = join(tmpdir(), `kt-bench-${Date.now()}`);
+  const summaries: ArmSummary[] = [];
+  for (const arm of ["baseline", "kt"] as const) {
+    const metrics: (RunMetrics | null)[] = [];
+    const passed: boolean[] = [];
+    for (let i = 0; i < opts.runs; i++) {
+      const ws = join(root, `${arm}-${i + 1}`);
+      prepareWorkspace(ws, arm);
+      log(`▶ ${arm} run ${i + 1}/${opts.runs}…`);
+      const res = await spawn(buildClaudeArgs(opts.model, opts.maxTurns), { cwd: ws, env: armEnv(arm, process.env) });
+      const m = res.exitCode === 0 ? parseClaudeJson(res.stdout) : null;
+      metrics.push(m);
+      // gate: phiên chỉ hợp lệ khi fixture xanh sau phiên (tránh so token của phiên bỏ dở)
+      const gate = await spawn(["bun", "test"], { cwd: ws, env: { ...process.env } });
+      passed.push(gate.exitCode === 0);
+      log(`  metrics ${m ? "✓" : "✗"} · test sau phiên: ${gate.exitCode === 0 ? "xanh" : "đỏ"}`);
+      if (!opts.keep) rmSync(ws, { recursive: true, force: true });
+    }
+    summaries.push(summarize(arm, metrics, passed));
+  }
+  if (!opts.keep) rmSync(root, { recursive: true, force: true });
+  const report = formatReport(summaries[0]!, summaries[1]!);
+  return opts.keep ? `${report}\nworkspaces giữ ở: ${root}\n` : `${report}\n`;
 }
