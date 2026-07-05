@@ -91,11 +91,13 @@ async function main() {
       const settingsPath = join(homedir(), ".claude", "settings.json");
       const r = installSettings(settingsPath, "kt");
       process.stdout.write(r.changed ? `✓ đã cài vào ${settingsPath}${r.backup ? ` (backup: ${r.backup})` : ""}\n` : "✓ đã cài sẵn, không đổi gì\n");
-      try {
-        const s = installSkill(join(homedir(), ".claude", "skills"), join(import.meta.dir, "..", "skills", "concise-output.md"));
-        process.stdout.write(s.changed ? "✓ đã cài skill concise-output (giảm output token)\n" : "✓ skill concise-output đã có, không đổi gì\n");
-      } catch (e: any) {
-        process.stderr.write(`⚠ không cài được skill concise-output: ${e?.message ?? e}\n`);
+      for (const name of ["concise-output", "lean-code"]) {
+        try {
+          const s = installSkill(join(homedir(), ".claude", "skills"), join(import.meta.dir, "..", "skills", `${name}.md`));
+          process.stdout.write(s.changed ? `✓ đã cài skill ${name}\n` : `✓ skill ${name} đã có, không đổi gì\n`);
+        } catch (e: any) {
+          process.stderr.write(`⚠ không cài được skill ${name}: ${e?.message ?? e}\n`);
+        }
       }
       return;
     }

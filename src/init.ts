@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, statSync } from "fs";
 import { homedir } from "os";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 
 // Khớp cả lời gọi trực tiếp (`kt status`, `/path/to/kt status`) lẫn qua biến (`"$KT" status`).
 const KT_STATUS_RE = /(kt|\$\{?KT\}?)["']?\s+status\b/;
@@ -90,11 +90,12 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
 }
 
 /**
- * Cài skill concise-output vào skills dir của Claude Code (giảm output token của model).
+ * Cài 1 skill từ file nguồn `skills/<name>.md` vào skills dir của Claude Code
+ * (target: <skillsDir>/<name>/SKILL.md — tên suy từ tên file nguồn).
  * KHÔNG ghi đè nếu user đã có skill cùng tên (kể cả bản custom) — giống chính sách statusLine.
  */
 export function installSkill(skillsDir: string, sourcePath: string): { changed: boolean } {
-  const target = join(skillsDir, "concise-output", "SKILL.md");
+  const target = join(skillsDir, basename(sourcePath, ".md"), "SKILL.md");
   if (existsSync(target)) return { changed: false };
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(sourcePath, target);
@@ -121,8 +122,10 @@ export function runDoctor(home: string = homedir()): string {
     lines.push(`hook-compress: ${cmds.includes("kt hook-compress") ? "✓" : "✗"}`);
     lines.push(`permission kt run: ${allow.includes("Bash(kt run:*)") ? "✓" : "✗ (thiếu Bash(kt run:*) trong permissions.allow)"}`);
   }
-  const skillPath = join(home, ".claude", "skills", "concise-output", "SKILL.md");
-  lines.push(`skill concise-output: ${existsSync(skillPath) ? "✓" : "✗ (chạy kt init)"}`);
+  for (const name of ["concise-output", "lean-code"]) {
+    const skillPath = join(home, ".claude", "skills", name, "SKILL.md");
+    lines.push(`skill ${name}: ${existsSync(skillPath) ? "✓" : "✗ (chạy kt init)"}`);
+  }
   lines.push(`bun: ${Bun.version}`);
   return lines.join("\n") + "\n";
 }

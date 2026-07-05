@@ -155,3 +155,33 @@ test("append vào Bash matcher có sẵn, không tạo block trùng", () => {
   expect(cmds).toContain("kt hook-guard");
   expect(cmds).toContain("kt hook-compress");
 });
+
+test("installSkill: suy tên skill từ tên file nguồn (lean-code)", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  const skillsDir = `${DIR}/skills`;
+  const r1 = installSkill(skillsDir, "skills/lean-code.md");
+  expect(r1.changed).toBe(true);
+  expect(readFileSync(`${skillsDir}/lean-code/SKILL.md`, "utf8")).toContain("lean-code");
+  const r2 = installSkill(skillsDir, "skills/lean-code.md");
+  expect(r2.changed).toBe(false);
+});
+
+test("installSkill: user đã có lean-code custom => KHÔNG ghi đè", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  const skillsDir = `${DIR}/skills`;
+  mkdirSync(`${skillsDir}/lean-code`, { recursive: true });
+  writeFileSync(`${skillsDir}/lean-code/SKILL.md`, "custom của anh");
+  const r = installSkill(skillsDir, "skills/lean-code.md");
+  expect(r.changed).toBe(false);
+  expect(readFileSync(`${skillsDir}/lean-code/SKILL.md`, "utf8")).toBe("custom của anh");
+});
+
+test("runDoctor: báo trạng thái cả skill lean-code", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(`${DIR}/.claude/skills/lean-code`, { recursive: true });
+  writeFileSync(`${DIR}/.claude/skills/lean-code/SKILL.md`, "x");
+  const out = runDoctor(DIR);
+  expect(out).toMatch(/skill lean-code:\s+✓/);
+  expect(out).toMatch(/skill concise-output:\s+✗/);
+});
