@@ -29,8 +29,8 @@ kt doctor           # verify the setup
 - `kt init` also adds `Bash(kt run:*)` to `permissions.allow` (so rewritten commands don't re-prompt)
   and installs the `concise-output` + `lean-code` skills into `~/.claude/skills/` (trim the model's
   own output — the most expensive tokens; `lean-code` makes the model write less code via an
-  efficiency ladder: reuse → stdlib → existing deps → minimum). None of these overwrite existing
-  user versions.
+  efficiency ladder inspired by the [ponytail](https://github.com/DietrichGebert/ponytail) project
+  (reuse → stdlib → existing deps → minimum)). None of these overwrite existing user versions.
 - **Trade-off to know:** `Bash(kt run:*)` is a wildcard — anything invoked *through* `kt run` is
   auto-approved (its output still goes through the compressor + char cap, so the token risk stays
   neutralized). If you want per-command prompting instead, remove that entry from `permissions.allow`.
