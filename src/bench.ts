@@ -111,12 +111,13 @@ export function formatReport(base: ArmSummary, kt: ArmSummary): string {
     row("Turns", base.numTurns, kt.numTurns, num),
     row("Duration", base.durationMs, kt.durationMs, sec),
     "",
+    "(Δ = kt so với baseline; dương = kt tốn hơn)",
     `runs hợp lệ (test xanh sau phiên): baseline ${base.valid}/${base.total}, kt ${kt.valid}/${kt.total}`,
   ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// Fixture: mini project Bun có bug thật (median quên sort) — 3 test fail, ~45 test pass
+// Fixture: mini project Bun có bug thật (median quên sort) — 3 test fail, 47 test pass
 // làm nhiễu output đủ lớn để kt có đất nén. Sinh lúc chạy (không để file *.test.ts
 // trong repo kẻo bun test của kuro-lean quét nhầm).
 // ---------------------------------------------------------------------------
@@ -269,25 +270,28 @@ export async function runBench(
 ): Promise<string> {
   const root = join(tmpdir(), `kt-bench-${Date.now()}`);
   const summaries: ArmSummary[] = [];
-  for (const arm of ["baseline", "kt"] as const) {
-    const metrics: (RunMetrics | null)[] = [];
-    const passed: boolean[] = [];
-    for (let i = 0; i < opts.runs; i++) {
-      const ws = join(root, `${arm}-${i + 1}`);
-      prepareWorkspace(ws, arm);
-      log(`▶ ${arm} run ${i + 1}/${opts.runs}…`);
-      const res = await spawn(buildClaudeArgs(opts.model, opts.maxTurns), { cwd: ws, env: armEnv(arm, process.env) });
-      const m = res.exitCode === 0 ? parseClaudeJson(res.stdout) : null;
-      metrics.push(m);
-      // gate: phiên chỉ hợp lệ khi fixture xanh sau phiên (tránh so token của phiên bỏ dở)
-      const gate = await spawn(["bun", "test"], { cwd: ws, env: { ...process.env } });
-      passed.push(gate.exitCode === 0);
-      log(`  metrics ${m ? "✓" : "✗"} · test sau phiên: ${gate.exitCode === 0 ? "xanh" : "đỏ"}`);
-      if (!opts.keep) rmSync(ws, { recursive: true, force: true });
+  try {
+    for (const arm of ["baseline", "kt"] as const) {
+      const metrics: (RunMetrics | null)[] = [];
+      const passed: boolean[] = [];
+      for (let i = 0; i < opts.runs; i++) {
+        const ws = join(root, `${arm}-${i + 1}`);
+        prepareWorkspace(ws, arm);
+        log(`▶ ${arm} run ${i + 1}/${opts.runs}…`);
+        const res = await spawn(buildClaudeArgs(opts.model, opts.maxTurns), { cwd: ws, env: armEnv(arm, process.env) });
+        const m = res.exitCode === 0 ? parseClaudeJson(res.stdout) : null;
+        metrics.push(m);
+        // gate: phiên chỉ hợp lệ khi fixture xanh sau phiên (tránh so token của phiên bỏ dở)
+        const gate = await spawn(["bun", "test"], { cwd: ws, env: { ...process.env } });
+        passed.push(gate.exitCode === 0);
+        log(`  metrics ${m ? "✓" : "✗"} · test sau phiên: ${gate.exitCode === 0 ? "xanh" : "đỏ"}`);
+      }
+      summaries.push(summarize(arm, metrics, passed));
     }
-    summaries.push(summarize(arm, metrics, passed));
+  } finally {
+    // spawn ném lỗi giữa chừng vẫn phải dọn tmp (trừ khi --keep)
+    if (!opts.keep) rmSync(root, { recursive: true, force: true });
   }
-  if (!opts.keep) rmSync(root, { recursive: true, force: true });
   const report = formatReport(summaries[0]!, summaries[1]!);
   return opts.keep ? `${report}\nworkspaces giữ ở: ${root}\n` : `${report}\n`;
 }
