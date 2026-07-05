@@ -27,8 +27,10 @@ kt doctor           # verify the setup
 - `kt init` **never overwrites** a custom status line — it only sets `kt status` if you don't have one
   yet. It writes a `.bak` backup before changing anything and is idempotent.
 - `kt init` also adds `Bash(kt run:*)` to `permissions.allow` (so rewritten commands don't re-prompt)
-  and installs the `concise-output` skill into `~/.claude/skills/` (trims the model's own output —
-  the most expensive tokens). Neither overwrites existing user versions.
+  and installs the `concise-output` + `lean-code` skills into `~/.claude/skills/` (trim the model's
+  own output — the most expensive tokens; `lean-code` makes the model write less code via an
+  efficiency ladder: reuse → stdlib → existing deps → minimum). None of these overwrite existing
+  user versions.
 - **Trade-off to know:** `Bash(kt run:*)` is a wildcard — anything invoked *through* `kt run` is
   auto-approved (its output still goes through the compressor + char cap, so the token risk stays
   neutralized). If you want per-command prompting instead, remove that entry from `permissions.allow`.
@@ -90,6 +92,10 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   - ⏳quota + 📋plan + ✅todo come from the CK-stack cache / transcript when available; they auto-hide otherwise.
   - ♻️ shows tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4); hidden until
     the first compressed run.
+- `kt bench [--runs N] [--model M] [--max-turns T] [--keep]` — A/B benchmark end-to-end: runs REAL headless
+  Claude Code sessions on a seeded bug-fix task, `baseline` arm (hooks disabled via `KT_DISABLE=1`) vs `kt` arm
+  (hook wired in workspace settings), reports median context tokens / output tokens / cost / turns / duration.
+  ⚠ Spends real API quota (default: 3 runs × 2 arms on Haiku). Needs `claude` CLI + `kt` on PATH.
 - `kt init` / `kt doctor` — install into / inspect Claude Code settings.
 
 ## How compression works
@@ -159,6 +165,33 @@ Token estimate ≈ chars / 4. Reproduce with `bash scripts/measure.sh`.
   signal. That's intentional.
 - `bun test` saves little because Bun's output is already terse; projects using jest/vitest/go test
   (verbose output) save far more.
+
+## End-to-end benchmark (`kt bench`)
+
+`kt bench` — real headless Claude Code sessions on a seeded bug-fix task (~50 tests, 1 planted bug),
+median of 3 runs/arm, model Haiku 4.5, 2026-07-05. Correctness gate: a run only counts if the
+fixture test suite is green after the session — 6/6 runs valid here.
+
+| Metric (median) | baseline | kt | Δ |
+|---|---|---|---|
+| Context tokens (in+cache) | 254,205 | 340,371 | 34% |
+| Output tokens | 2,934 | 2,916 | -1% |
+| Cost (USD) | $0.0750 | $0.0855 | 14% |
+| Turns | 8 | 11 | 38% |
+| Duration | 40.3s | 43.1s | 7% |
+
+**Honest reading:**
+
+- On this small fixture the `kt` arm cost **more** end-to-end: the kt sessions took more agent turns
+  (median 11 vs 8), and each extra turn re-reads the whole conversation context — which swamped the
+  few KB of tool-output compression per run.
+- Per-command compression savings are real and measured separately (the per-command table above,
+  `scripts/measure.sh`); they pay off when command outputs are large — this fixture's `bun test`
+  output is only a few KB.
+- Takeaway: measure on your own workload with `kt bench --runs N`. Small-output tasks are where the
+  hook can cost more than it saves.
+
+Reproduce: `kt bench --runs 3`.
 
 ## Configuration
 
