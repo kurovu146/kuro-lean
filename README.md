@@ -68,7 +68,8 @@ Claude Code–specific. The compression itself still works everywhere — you ju
    Suggested text:
    > When running shell commands that produce long output (tests, builds, `git diff`, install logs),
    > invoke them as `kt run -- <command>` to compress the output and save tokens. Failures are kept
-   > in full. Use `kt show` to see the full log of the last run.
+   > in full, and small outputs are printed verbatim without compression. When output WAS compressed
+   > (a `kt show <id>` hint is appended), use `kt show` to see the full log.
 
    Note: this is a *nudge*, not enforcement — the agent decides whether to follow it. Only Claude
    Code enforces it via the hook.
@@ -81,6 +82,11 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 ## Subcommands
 
 - `kt run -- <cmd>` — run the command, print the compressed output, save the full log.
+  **Small outputs pass through untouched**: if the raw output is under `run.rawUnderChars`
+  (default 4000 chars ≈ 1k tokens), `kt run` prints it verbatim — no compression, no log/meta.
+  Rationale: `kt bench` measured that compressing tiny outputs makes the model spend extra
+  verification turns (each turn re-reads the whole context), costing more than it saves.
+  Compression only kicks in where the win is real. Set `"run": { "rawUnderChars": 0 }` to disable.
 - `kt show [id]` — view the full log (latest run if no id).
 - `kt stats` — savings report from real usage: total % saved (~tokens) + top commands still
   occupying context after compression (candidates for new patterns/guards). Data comes from
@@ -190,6 +196,22 @@ fixture test suite is green after the session — 6/6 runs valid here.
   output is only a few KB.
 - Takeaway: measure on your own workload with `kt bench --runs N`. Small-output tasks are where the
   hook can cost more than it saves.
+- **Follow-up shipped:** this result led to the small-output pass-through (`run.rawUnderChars`,
+  see `kt run` above) — outputs under the threshold are no longer compressed at all, so the
+  losing case measured here is now bypassed by default.
+
+Re-measured after the pass-through (same task, 2026-07-09, median of 3 runs/arm, 6/6 valid):
+
+| Metric (median) | baseline | kt | Δ |
+|---|---|---|---|
+| Context tokens (in+cache) | 238,612 | 239,830 | 1% |
+| Output tokens | 2,924 | 3,256 | 11% |
+| Cost (USD) | $0.0739 | $0.0781 | 6% |
+| Turns | 8 | 8 | 0% |
+| Duration | 38.3s | 37.3s | -3% |
+
+The extra-turns penalty is gone (8 vs 8); the remaining deltas are within run-to-run noise.
+On small-output tasks kt is now neutral instead of a net loss — the wins stay where outputs are big.
 
 Reproduce: `kt bench --runs 3`.
 
@@ -202,7 +224,7 @@ Optional per-project `kt.json` (deep-merged over defaults):
   "profiles": { "test": true, "build": true, "install": true, "git": true, "lint": true, "generic": true },
   "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
   "limits": { "maxChars": 16000 },
-  "run": { "timeoutMs": 120000 },
+  "run": { "timeoutMs": 120000, "rawUnderChars": 4000 },
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
   "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } }

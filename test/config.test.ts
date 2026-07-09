@@ -24,6 +24,16 @@ test("run.timeoutMs: có default 120s và merge được từ kt.json", () => {
   expect(defaultConfig.run.timeoutMs).toBe(120_000);
   writeFileSync(`${DIR}/kt.json`, JSON.stringify({ run: { timeoutMs: 300_000 } }));
   expect(loadConfig(DIR).run.timeoutMs).toBe(300_000);
+  // override 1 field của run KHÔNG được làm rơi default field còn lại (chống regression merge nông)
+  expect(loadConfig(DIR).run.rawUnderChars).toBe(4000);
+});
+
+test("run.rawUnderChars: merge được từ kt.json, giữ timeoutMs default", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(`${DIR}/kt.json`, JSON.stringify({ run: { rawUnderChars: 0 } }));
+  expect(loadConfig(DIR).run.rawUnderChars).toBe(0);
+  expect(loadConfig(DIR).run.timeoutMs).toBe(120_000);
 });
 
 test("limits.maxChars: có default và merge được từ kt.json", () => {

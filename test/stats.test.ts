@@ -70,9 +70,11 @@ test("renderStats: tổng tiết kiệm + top lệnh còn chiếm context", () =
   expect(gitIdx).toBeLessThan(testIdx);
 });
 
-test("pipeline ghi meta 1 dòng vào index.jsonl mỗi run", async () => {
+test("pipeline ghi meta 1 dòng vào index.jsonl mỗi run (trên ngưỡng pass-through)", async () => {
   rmSync(ROOT, { recursive: true, force: true });
-  await runAndCompress(["sh", "-c", "echo hi"], defaultConfig, () => "m1", ROOT);
+  // rawUnderChars: 0 = tắt pass-through — output nhỏ dưới ngưỡng thì pipeline cố ý KHÔNG ghi meta
+  const cfg = { ...defaultConfig, run: { ...defaultConfig.run, rawUnderChars: 0 } };
+  await runAndCompress(["sh", "-c", "echo hi"], cfg, () => "m1", ROOT);
   const all = readMeta(ROOT);
   expect(all.length).toBe(1);
   expect(all[0]!.id).toBe("m1");

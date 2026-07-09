@@ -14,11 +14,19 @@ export async function runAndCompress(
   const res = await run(argv, config.run.timeoutMs);
   const command = argv.join(" ");
   const input = { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, command };
+  const full = joinOutput(input);
+  const header = res.timedOut
+    ? `⏱️ lệnh bị kill sau timeout (output có thể chưa đầy đủ — chạy raw nếu cần theo dõi liên tục)\n`
+    : "";
+  // Pass-through output nhỏ: trả nguyên văn, không lưu store/meta — model thấy output
+  // quen thuộc nên không tốn turn xác minh; kt chỉ nén khi phần tiết kiệm đáng kể.
+  if (full.length < config.run.rawUnderChars) {
+    return { compact: header + full, exitCode: res.exitCode };
+  }
   const profile = detect(command);
   const result = compress(profile, input, config);
 
   const id = idFactory();
-  const full = joinOutput(input);
   try {
     saveRun(id, full, { keep: config.store.keepRuns, root: storeRoot });
     appendMeta(
@@ -30,8 +38,5 @@ export async function runAndCompress(
   }
   const saved = countLines(full) - result.compactLines;
   const footer = saved > 0 ? `\n↳ ${saved} dòng đã nén · full: kt show ${id}` : "";
-  const header = res.timedOut
-    ? `⏱️ lệnh bị kill sau timeout (output có thể chưa đầy đủ — chạy raw nếu cần theo dõi liên tục)\n`
-    : "";
   return { compact: header + result.text + footer, exitCode: res.exitCode };
 }
