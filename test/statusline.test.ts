@@ -253,3 +253,36 @@ test("perTurn null/0 => ẩn hẳn, không in $0.00/lượt", () => {
   );
   expect(s).not.toContain("/lượt");
 });
+
+test("idle >= 60 phút => cảnh báo cache đã hết + giá nạp lại", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
+    cfg,
+    { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null,
+      idle: { minutes: 135, cacheAlive: false, reloadCost: 5.02 } },
+  );
+  expect(s).toContain("2h15");
+  expect(s).toContain("$5.02");
+});
+
+test("idle ngắn => chỉ hiện thời gian, không doạ giá", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
+    cfg,
+    { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null,
+      idle: { minutes: 25, cacheAlive: true, reloadCost: 5.02 } },
+  );
+  expect(s).toContain("25ph");
+  expect(s).not.toContain("$5.02");
+});
+
+test("idle dưới ngưỡng => ẩn hẳn (không nhiễu statusline)", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
+    cfg,
+    { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null,
+      idle: { minutes: 3, cacheAlive: true, reloadCost: 1 } },
+  );
+  expect(s).not.toContain("ph ·");
+  expect(s).not.toContain("3ph");
+});

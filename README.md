@@ -97,6 +97,12 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   prefix); a model with no entry is skipped rather than guessed at. This is the counterpart to
   `kt stats`: `stats` measures the shell output kt compressed, `cost` measures where the money
   actually goes — usually not the same place. See [Where the money goes](#where-the-money-goes).
+- `kt handoff [file]` — print a prompt that asks the model to distill the session state into a file
+  (default `.kt/handoff.md`): what's in flight, decisions and *why*, next step, files touched,
+  traps hit — explicitly **no pasted code or diffs**. Run it before you stop for the day, then start
+  the next session by reading that file instead of resuming a 500k-token history. On the measured
+  workload that is ~$0.10 instead of ~$5.00, and every later turn stays cheap because the context
+  starts small. See [Where the money goes](#where-the-money-goes).
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
@@ -104,6 +110,10 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   - ⏳quota + 📋plan + ✅todo come from the CK-stack cache / transcript when available; they auto-hide otherwise.
   - ♻️ shows tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4); hidden until
     the first compressed run.
+  - `🕐 42ph` / `❄️ 2h15 · nạp lại ~$5.00` — how long the session has been silent (from the
+    transcript's mtime), shown once it passes 10 minutes. The snowflake means the 1-hour cache TTL
+    has expired, so the next turn re-writes the whole context at 2× input — the number after it is
+    that bill. This is the moment `/clear` (or `kt handoff`) is worth the most.
   - `$x.xx/lượt` is what it costs to re-read the current context on **every following turn**
     (`tokens × 0.1 × input price` — the cache-read rate). It grows as the context fills and is the
     cheapest reminder that `/clear` between unrelated tasks is worth money. Needs `model.id` in the
@@ -206,6 +216,30 @@ Two consequences worth internalizing, both of which kt can only *show* you, not 
 
 `kt cost` prints this table for your own project. `$x.xx/lượt` on the status line is the same
 arithmetic applied live to the session you're in.
+
+**Cost is extremely concentrated in long sessions.** Across 1,342 sessions, the **top 1% (13 sessions)
+account for 43.7%** of the bill — all the same shape: 600–3,000 turns with the context near the 1M
+ceiling. Cache-read cost scales with the integral of context over turns, so splitting such a session
+along task boundaries divides that part by roughly the number of pieces, while the only new cost —
+re-writing the prefix per session — measured at $19–45 total. Cutting them into 4 is worth ~14% of
+the whole bill. That is what `kt handoff` is for.
+
+**The 1-hour cache TTL, measured.** Percentage of context that had to be re-written, by how long the
+session had been silent beforehand:
+
+| Silence before the turn | Context re-written |
+|---|---:|
+| < 1 min | 3.8% |
+| 30–50 min | 24.5% |
+| 50–60 min | 46.6% |
+| **60–90 min** | **87.6%** |
+| > 90 min | 97.2% |
+
+The cliff sits exactly at 60 minutes, and it is measured from the **last use**, not from creation —
+otherwise a long session would lose its cache every hour even while actively working, which the
+`< 1 min` row rules out. Note what expiry does *not* do: the conversation is still there and still
+billed in full. You lose the discount, not the history — which makes resuming an old session strictly
+worse than starting a fresh one, unless you actually need that history.
 
 ## Guard — block token-hungry calls before they run
 

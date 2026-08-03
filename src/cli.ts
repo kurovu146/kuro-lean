@@ -4,6 +4,7 @@ import { renderStatusline, collectExtras, type StatuslineInput } from "./statusl
 import { showRun, readMeta } from "./store";
 import { renderStats } from "./stats";
 import { renderCost, collectUsage, transcriptDir } from "./cost";
+import { handoffPrompt } from "./handoff";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
@@ -43,6 +44,12 @@ async function main() {
       process.stdout.write(
         renderStatusline(input, config.statusline, collectExtras(input, config.pricing)),
       );
+      return;
+    }
+    case "handoff": {
+      // In prompt để dán vào Claude trước khi nghỉ — chưng cất context xuống file,
+      // phiên sau bắt đầu nhẹ thay vì resume cả đống lịch sử (xem README).
+      process.stdout.write(handoffPrompt(rest[0] || ".kt/handoff.md") + "\n");
       return;
     }
     case "cost": {
@@ -132,7 +139,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|stats|cost|init|hook-compress|hook-guard|show|doctor|bench>\n");
+      process.stdout.write("kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|show|doctor|bench>\n");
   }
 }
 

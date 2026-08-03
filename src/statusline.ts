@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
 import { readMeta } from "./store";
-import { perTurnCost, type PricingTable } from "./cost";
+import { perTurnCost, priceOf, CACHE_WRITE_MULT, type PricingTable } from "./cost";
 
 export interface StatuslineInput {
   cwd?: string;
@@ -46,6 +46,19 @@ export interface Extras {
   // USD phải trả để đọc lại context cho MỖI lượt kế tiếp (cache read). Context phình =>
   // mỗi lần gõ Enter đắt thêm, kể cả khi không nạp gì mới. null/0 => ẩn.
   perTurn?: number | null;
+  // Im lặng bao lâu kể từ lần ghi transcript cuối. Quá TTL 1h thì cache chết và lượt tới
+  // phải nạp lại toàn bộ context (2× giá input) — đó là lúc `/clear` đáng giá nhất.
+  idle?: { minutes: number; cacheAlive: boolean; reloadCost: number | null } | null;
+}
+
+// Dưới ngưỡng này thì khoảng nghỉ không đáng bận tâm — đừng làm nhiễu statusline.
+const IDLE_SHOW_MIN = 10;
+// TTL cache 1 giờ (Claude Code dùng bản 1h). Xem README → Where the money goes.
+export const CACHE_TTL_MIN = 60;
+
+function fmtIdle(min: number): string {
+  const m = Math.round(min);
+  return m < 60 ? `${m}ph` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
 }
 
 // Đệm autocompact — khớp cách Claude Code tính % trong /context.
@@ -122,6 +135,15 @@ export function renderStatusline(
   const cost = extras?.cost ?? input.cost?.total_cost_usd;
   if (cost != null) l1.push(`$${cost.toFixed(2)}`);
   if (extras?.perTurn) l1.push(`$${extras.perTurn.toFixed(2)}/lượt`);
+  const idle = extras?.idle;
+  if (idle && idle.minutes >= IDLE_SHOW_MIN) {
+    // cache đã chết => nêu luôn giá nạp lại, vì đây đúng là lúc quyết định /clear hay không
+    l1.push(
+      idle.cacheAlive
+        ? `🕐 ${fmtIdle(idle.minutes)}`
+        : `❄️ ${fmtIdle(idle.minutes)}${idle.reloadCost ? ` · nạp lại ~$${idle.reloadCost.toFixed(2)}` : ""}`,
+    );
+  }
   const lines = [l1.join(" · ")];
 
   if (extras) {
@@ -345,6 +367,35 @@ export function collectSavedTokens(cwd: string): number | null {
   }
 }
 
+/**
+ * Đã im lặng bao lâu, tính từ lần ghi transcript cuối (mtime — rẻ, statusline render rất thường).
+ * Quá TTL thì cache chết: lượt kế tiếp phải ghi lại toàn bộ context ở giá 2× input.
+ */
+export function collectIdle(
+  input: StatuslineInput,
+  pricing?: PricingTable,
+  now: number = Date.now(),
+): Extras["idle"] {
+  const path = input.transcript_path;
+  if (!path || !existsSync(path)) return null;
+  let mtime: number;
+  try {
+    mtime = statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+  const minutes = Math.max(0, (now - mtime) / 60_000);
+  const cacheAlive = minutes < CACHE_TTL_MIN;
+  const model = input.model?.id;
+  const p = pricing && model ? priceOf(model, pricing) : null;
+  const tokens = totalTokens(input.context_window ?? {});
+  return {
+    minutes,
+    cacheAlive,
+    reloadCost: p ? (tokens / 1e6) * p.input * CACHE_WRITE_MULT : null,
+  };
+}
+
 export function collectExtras(input: StatuslineInput, pricing?: PricingTable): Extras {
   const dir = input.cwd || process.cwd();
   const { tools, todos } = parseTranscript(input.transcript_path);
@@ -361,5 +412,6 @@ export function collectExtras(input: StatuslineInput, pricing?: PricingTable): E
     savedTokens: collectSavedTokens(dir),
     // cần model *id* (vd claude-opus-5) — display_name ("Opus 5") không khớp bảng giá.
     perTurn: pricing && modelId ? perTurnCost(totalTokens(cw), modelId, pricing) : null,
+    idle: collectIdle(input, pricing),
   };
 }
