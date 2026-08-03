@@ -21,7 +21,9 @@ export interface Config {
 
 export const defaultConfig: Config = {
   profiles: { test: true, build: true, install: true, git: true, lint: true, generic: true },
-  generic: { thresholdLines: 40, headLines: 15, tailLines: 10 },
+  // thresholdLines 0 = không cắt head/tail cho profile generic; chỉ dựa vào limits.maxChars.
+  // Cắt giữa của grep/sed/ls làm model mất tín hiệu → phải `kt show` = thêm turn.
+  generic: { thresholdLines: 0, headLines: 15, tailLines: 10 },
   limits: { maxChars: 16_000 }, // ~4k token; chốt chặn sau mọi compressor
   // timeoutMs: suite e2e chậm hơn 2' → tăng trong kt.json của project đó.
   // rawUnderChars: output nhỏ hơn ngưỡng (~1k token) trả NGUYÊN VĂN không nén — kt bench 2026-07-05

@@ -19,6 +19,12 @@ test("vượt ngưỡng: head + tail + dòng ẩn", () => {
   expect(r.originalLines).toBe(8);
 });
 
+test("thresholdLines <= 0: tắt cắt dòng, giữ nguyên (chỉ còn cap ký tự chặn)", () => {
+  const r = generic(base("1\n2\n3\n4\n5\n6\n7\n8"), { thresholdLines: 0, headLines: 2, tailLines: 1 });
+  expect(r.text).toBe("1\n2\n3\n4\n5\n6\n7\n8");
+  expect(r.compactLines).toBe(8);
+});
+
 test("head+tail >= total: giữ nguyên, không trùng dòng", () => {
   // threshold 3, head 3 + tail 3 = 6 >= 5 total
   const r = generic(base("1\n2\n3\n4\n5"), { thresholdLines: 3, headLines: 3, tailLines: 3 });

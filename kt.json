@@ -1,6 +1,6 @@
 {
   "profiles": { "test": true, "build": true, "install": true, "git": true, "lint": true, "generic": true },
-  "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
+  "generic": { "thresholdLines": 0, "headLines": 15, "tailLines": 10 },
   "limits": { "maxChars": 16000 },
   "run": { "timeoutMs": 120000 },
   "store": { "keepRuns": 50 },

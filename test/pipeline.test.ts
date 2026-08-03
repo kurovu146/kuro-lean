@@ -42,12 +42,24 @@ test("output từ ngưỡng trở lên => vẫn nén + lưu log + ghi meta như 
   const R3 = "/tmp/kt-test-pipeline-big";
   rmSync(R3, { recursive: true, force: true });
   const cfg = { ...defaultConfig, run: { ...defaultConfig.run, rawUnderChars: 100 } };
-  const r = await runAndCompress(["sh", "-c", "seq 1 200"], cfg, () => "pipeBIG1", R3); // ~692 chars, 200 dòng
+  // ~23.9k chars — vượt limits.maxChars (16k) nên bị cap cắt. Generic không còn cắt head/tail
+  // theo dòng nữa, cap ký tự là cơ chế nén duy nhất của nó.
+  const r = await runAndCompress(["sh", "-c", "seq 1 5000"], cfg, () => "pipeBIG1", R3);
   expect(showRun("pipeBIG1", R3)).not.toBeNull();
   const meta = readMeta(R3);
   expect(meta.length).toBe(1);
   expect(meta[0]!.originalChars).toBeGreaterThan(100);
   expect(r.compact.length).toBeLessThan(meta[0]!.originalChars); // thực sự có nén
+});
+
+test("generic dưới cap => giữ NGUYÊN VĂN (không cắt giữa, khỏi tốn turn kt show)", async () => {
+  const R3b = "/tmp/kt-test-pipeline-nocut";
+  rmSync(R3b, { recursive: true, force: true });
+  const cfg = { ...defaultConfig, run: { ...defaultConfig.run, rawUnderChars: 100 } };
+  const r = await runAndCompress(["sh", "-c", "seq 1 200"], cfg, () => "pipeNOCUT", R3b); // ~692 ch, 200 dòng
+  expect(r.compact).not.toContain("dòng đã ẩn");
+  expect(r.compact.split("\n").filter(Boolean).length).toBe(200);
+  expect(readMeta(R3b).length).toBe(1); // vẫn ghi meta để `kt stats` thấy
 });
 
 test("mặc định rawUnderChars = 4000", () => {

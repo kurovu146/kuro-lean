@@ -17,14 +17,63 @@ test("đã là kt => bỏ qua", () => {
   expect(decideCompress("kt run -- npm test")).toBeNull();
 });
 
-test("có pipe/redirect/&& => bỏ qua (tránh phá logic)", () => {
+test("có pipe/redirect => bỏ qua (tránh phá logic)", () => {
   expect(decideCompress("npm test | tee out.txt")).toBeNull();
-  expect(decideCompress("npm test && echo ok")).toBeNull();
   expect(decideCompress("npm test > out.txt")).toBeNull();
 });
 
-test("generic không match => null", () => {
-  expect(decideCompress("echo hi")).toBeNull();
+test("lệnh generic (grep/sed/ls) => vẫn rewrite — đây là nguồn ngốn context lớn nhất", () => {
+  expect(decideCompress("grep -rn foo src")).toBe("kt run -- grep -rn foo src");
+  expect(decideCompress("ls -la")).toBe("kt run -- ls -la");
+});
+
+test("cd X && cmd => cd Ở NGOÀI (Claude Code giữ cwd giữa các lệnh), chỉ wrap phần sau", () => {
+  expect(decideCompress("cd /tmp/x && go test ./...")).toBe("cd /tmp/x && kt run -- go test ./...");
+  expect(decideCompress("cd /tmp/x && echo a && ls")).toBe(
+    "cd /tmp/x && kt run -- bash -c 'echo a && ls'",
+  );
+});
+
+test("chuỗi && không có cd => wrap cả chuỗi qua bash -c", () => {
+  expect(decideCompress('echo "=== A ===" && ls -la')).toBe(
+    `kt run -- bash -c 'echo "=== A ===" && ls -la'`,
+  );
+});
+
+test("lệnh đổi trạng thái shell ở giữa chuỗi => null (wrap sẽ mất tác dụng)", () => {
+  expect(decideCompress("echo a && cd /tmp/x")).toBeNull();
+  expect(decideCompress("nvm use 20 && npm test")).toBeNull();
+  expect(decideCompress("export FOO=1 && npm test")).toBeNull();
+});
+
+test("dev server / tail -f => null (wrap sẽ treo tới timeout)", () => {
+  expect(decideCompress("npm run dev")).toBeNull();
+  expect(decideCompress("cd /tmp/x && next dev")).toBeNull();
+  expect(decideCompress("tail -f app.log")).toBeNull();
+});
+
+test("chuỗi && chứa watch => null (wrap sẽ treo)", () => {
+  expect(decideCompress("cd /tmp/x && npm run dev -w")).toBeNull();
+});
+
+test("chuỗi && chứa pipe/redirect => null (giữ nguyên rào cũ)", () => {
+  expect(decideCompress("cd /tmp/x && npm test | head")).toBeNull();
+  expect(decideCompress("cd /tmp/x && npm test > out.txt")).toBeNull();
+});
+
+test("lệnh cần tty/interactive => null (kt run bỏ stdin, wrap sẽ hỏng)", () => {
+  expect(decideCompress("sudo launchctl list")).toBeNull();
+  expect(decideCompress("ssh box uptime")).toBeNull();
+  expect(decideCompress("gh auth login")).toBeNull();
+  expect(decideCompress("docker exec -it web sh")).toBeNull();
+  expect(decideCompress("git rebase -i HEAD~3")).toBeNull();
+  expect(decideCompress("cd /tmp/x && sudo make install")).toBeNull();
+});
+
+test("REPL trần => null, nhưng cùng lệnh có arg thì rewrite", () => {
+  expect(decideCompress("node")).toBeNull();
+  expect(decideCompress("python3")).toBeNull();
+  expect(decideCompress("python3 scripts/report.py")).toBe("kt run -- python3 scripts/report.py");
 });
 
 test("KT_DISABLE=1 => null (kill-switch)", () => {
@@ -60,8 +109,8 @@ test("env-prefix + watch => vẫn null (wrap sẽ treo)", () => {
   expect(decideCompress("CI=1 tsc --watch")).toBeNull();
 });
 
-test("env-prefix nhưng lệnh generic => null", () => {
-  expect(decideCompress("FOO=1 echo hi")).toBeNull();
+test("env-prefix + lệnh generic => vẫn wrap qua bash -c", () => {
+  expect(decideCompress("FOO=1 echo hi")).toBe("kt run -- bash -c 'FOO=1 echo hi'");
 });
 
 test("lệnh lint => rewrite sang kt run", () => {

@@ -1,11 +1,13 @@
 import { type CompressInput, type CompressResult, type GenericOpts, joinOutput, countLines } from "./types";
 
-const DEFAULT: GenericOpts = { thresholdLines: 40, headLines: 15, tailLines: 10 };
+const DEFAULT: GenericOpts = { thresholdLines: 0, headLines: 15, tailLines: 10 };
 
 export function generic(input: CompressInput, opts: GenericOpts = DEFAULT): CompressResult {
   const combined = joinOutput(input);
   const total = countLines(combined);
-  if (total <= opts.thresholdLines) {
+  // thresholdLines <= 0: tắt cắt head/tail — output generic (grep/sed/ls) hay cần đọc phần giữa,
+  // cắt đi thì model phải `kt show` = thêm turn, đắt hơn phần tiết kiệm. Cap ký tự vẫn chặn cú lớn.
+  if (opts.thresholdLines <= 0 || total <= opts.thresholdLines) {
     return { text: combined, originalLines: total, compactLines: total };
   }
   if (opts.headLines + opts.tailLines >= total) {

@@ -116,7 +116,7 @@ untouched to avoid destroying signal):
 | **lint** | `eslint`, `golangci-lint`, `<pm> run lint` — same as build: clean → 1 line, otherwise error/warning lines only |
 | **install** | keep `added/removed/audited/vulnerabilit…` lines; on failure keep full output |
 | **git** | `git diff` ≤ 40 lines kept as-is (the agent usually wants to *read* it); larger diffs → `path +adds -dels` per file. `git status`/`log` handled as generic |
-| **generic** | > 40 lines → keep first 15 + last 10, hide the middle (`… [N lines hidden — kt show] …`) |
+| **generic** | everything else (`grep`, `sed`, `ls`, `cat`, `go run`…) — kept verbatim; the char cap below is its only compression. Middle-of-output matters too often here, and cutting it costs the agent a `kt show` turn. Set `generic.thresholdLines` > 0 to re-enable the old head/tail cut (first `headLines` + last `tailLines`, middle hidden) |
 
 Package-manager scripts are recognized too: `npm/pnpm/yarn/bun run test|build|lint` (and the
 no-`run` variants) map to their profile.
@@ -125,6 +125,43 @@ no-`run` variants) map to their profile.
 profile — including fallbacks. Catches what line-counting misses (a single giant minified/JSON
 line, a huge failing suite): keeps 65% head + 35% tail with a `… [cut ~N KB — kt show] …` marker.
 Set to `0` to disable.
+
+### Which commands the hook rewrites
+
+`kt hook-compress` rewrites a Bash command into `kt run -- …` unless one of these applies:
+
+- **Pipes / redirects / subshells / newlines** (`|`, `;`, `>`, `` ` ``, `$(…)`, `&`) — left to bash.
+  `2>&1` is the exception (kt merges both streams anyway) and routes through `bash -c`.
+- **`&&` chains** are rewritten as a whole through `bash -c`, *except* a leading `cd X &&`: the `cd`
+  stays outside the wrapper, because Claude Code keeps the shell's working directory between Bash
+  calls — burying it in a subshell would leave every later command in the wrong directory. A `cd`
+  (or `export`/`source`/`nvm`…) anywhere *later* in the chain disables the rewrite entirely.
+- **Long-running commands** (`--watch`, `nodemon`, `<pm> run dev|start|serve`, `next dev`,
+  `tail -f`, `… logs -f`, `ping`) — wrapping them buffers until exit, i.e. hangs until the timeout.
+- **Commands needing a tty** (`sudo`, `ssh`, `vim`, `less`, `psql`, `docker … -it`, `gh auth login`,
+  `git rebase -i`, a bare `node`/`python3` REPL…) — `kt run` runs with stdin ignored.
+
+### How much this actually saves
+
+Measured over 12,220 real Bash calls from ~2 months of Claude Code transcripts (9.8M chars of tool
+output), the honest answer is: **less than you'd hope, and it depends entirely on your output shape.**
+
+| Output size per command | Calls | Share of all chars |
+|---|---:|---:|
+| < 4,000 ch → passed through untouched | 11,827 | 72% |
+| 4,000–16,000 ch | 381 | 25% |
+| > 16,000 ch → the char cap bites | 12 | 2% |
+
+Context there is eaten by the *number* of small commands, not by a few giant ones — and compressing
+small outputs is exactly what `kt bench` measured as a net loss (extra verification turns). So on
+that workload the default config saves ~0–1%. Turning the old aggressive head/tail cut back on
+(`generic.thresholdLines: 40`) simulates to ~7%, but that is the setting the benchmark found costs
+extra agent turns — measure with `kt bench` before trusting it.
+
+**Where kt still earns its place:** capping the rare huge dump, the guard (blocking `find /`,
+`cat` on a 5 MB file, whole lock files) before those tokens ever exist, and the two skills it
+installs (`concise-output`, `lean-code`) which trim the model's *own* output — the priciest tokens.
+Treat `♻️ saved` as "disasters averted", not as a running discount.
 
 ## Guard — block token-hungry calls before they run
 
@@ -222,7 +259,7 @@ Optional per-project `kt.json` (deep-merged over defaults):
 ```json
 {
   "profiles": { "test": true, "build": true, "install": true, "git": true, "lint": true, "generic": true },
-  "generic": { "thresholdLines": 40, "headLines": 15, "tailLines": 10 },
+  "generic": { "thresholdLines": 0, "headLines": 15, "tailLines": 10 },
   "limits": { "maxChars": 16000 },
   "run": { "timeoutMs": 120000, "rawUnderChars": 4000 },
   "store": { "keepRuns": 50 },
