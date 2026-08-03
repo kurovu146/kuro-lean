@@ -103,6 +103,15 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   the next session by reading that file instead of resuming a 500k-token history. On the measured
   workload that is ~$0.10 instead of ~$5.00, and every later turn stays cheap because the context
   starts small. See [Where the money goes](#where-the-money-goes).
+- `kt handoff --recover [N]` — for when you *didn't* get to run the above: laptop shut, left in a
+  hurry, remembered three days later. The prompt cache lives on Anthropic's servers and expires;
+  the **transcript lives on your disk** (`~/.claude/projects/<project>/<session>.jsonl`) and does
+  not. This reads the most recent transcript for the current directory, keeps the last `N` messages
+  (default 60), drops thinking blocks and clips tool output, and prints the result for you to paste
+  into a fresh session. On a real 7.6 MB / 1.83M-token session that tail is **~2.5k tokens — 0.1%**
+  of the file, and still carries the working context. No model call, no cost, nothing running in the
+  background: the extract *is* what the new session needs, so there is no point paying another model
+  to summarize it first.
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`

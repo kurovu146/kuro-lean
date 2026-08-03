@@ -47,6 +47,21 @@ async function main() {
       return;
     }
     case "handoff": {
+      // --recover: cứu phiên đã mất cache (máy tắt, về gấp). Transcript nằm trên đĩa nên
+      // đọc được bất cứ lúc nào — không cần cache, không cần resume phiên cũ.
+      if (rest[0] === "--recover") {
+        const { latestTranscript, extractTail, recoverPrompt } = await import("./recover");
+        const { readFileSync } = await import("fs");
+        const n = Number(rest[1]) || 60;
+        const file = latestTranscript(transcriptDir(process.cwd()));
+        if (!file) {
+          process.stderr.write("kt: không tìm thấy transcript nào cho thư mục này\n");
+          process.exit(1);
+        }
+        const lines = readFileSync(file, "utf8").split("\n");
+        process.stdout.write(recoverPrompt(extractTail(lines, n), file));
+        return;
+      }
       // In prompt để dán vào Claude trước khi nghỉ — chưng cất context xuống file,
       // phiên sau bắt đầu nhẹ thay vì resume cả đống lịch sử (xem README).
       process.stdout.write(handoffPrompt(rest[0] || ".kt/handoff.md") + "\n");
