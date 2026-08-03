@@ -29,6 +29,40 @@ test("đăng ký matcher Read => kt hook-guard (chặn file nhiễu)", () => {
   expect(readBlock.hooks.map((h: any) => h.command)).toContain("kt hook-guard");
 });
 
+test("đăng ký UserPromptSubmit => kt hook-prompt (chặn lượt đầu sau khi cache chết)", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, "{}");
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  const cmds = cfg.hooks.UserPromptSubmit.flatMap((b: any) => b.hooks.map((h: any) => h.command));
+  expect(cmds).toContain("kt hook-prompt");
+  // event không theo tool => không được gắn matcher, Claude Code chỉ nhận matcher cho tool event
+  expect(cfg.hooks.UserPromptSubmit[0].matcher).toBeUndefined();
+});
+
+test("UserPromptSubmit: chạy lần 2 không nhân đôi, hook sẵn có của user còn nguyên", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(DIR, { recursive: true });
+  writeFileSync(settings, JSON.stringify({
+    hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "my-prompt-hook" }] }] },
+  }));
+  installSettings(settings, "kt");
+  installSettings(settings, "kt");
+  const cfg = JSON.parse(readFileSync(settings, "utf8"));
+  const cmds = cfg.hooks.UserPromptSubmit.flatMap((b: any) => b.hooks.map((h: any) => h.command));
+  expect(cmds).toContain("my-prompt-hook");
+  expect(cmds.filter((c: string) => c === "kt hook-prompt").length).toBe(1);
+});
+
+test("doctor: báo trạng thái hook-prompt", () => {
+  rmSync(DIR, { recursive: true, force: true });
+  mkdirSync(`${DIR}/.claude`, { recursive: true });
+  writeFileSync(`${DIR}/.claude/settings.json`, "{}");
+  installSettings(`${DIR}/.claude/settings.json`, "kt");
+  expect(runDoctor(DIR)).toContain("hook-prompt:  ✓");
+});
+
 test("có statusLine custom sẵn => KHÔNG ghi đè, vẫn thêm hook", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });

@@ -42,6 +42,17 @@ function ensureMatcher(list: Matcher[], matcher: string, cmds: string[]): void {
   }
 }
 
+/**
+ * Như ensureMatcher nhưng cho event KHÔNG theo tool (UserPromptSubmit, SessionEnd...):
+ * những event này không có matcher, gắn vào chỉ tổ gây hiểu nhầm.
+ */
+function ensureHook(list: { hooks: HookEntry[] }[], cmd: string): void {
+  if (list.some((b) => b.hooks?.some((h) => h.command === cmd))) return;
+  const plain = list.find((b) => !("matcher" in b));
+  if (plain) plain.hooks.push({ type: "command", command: cmd });
+  else list.push({ hooks: [{ type: "command", command: cmd }] });
+}
+
 function parseSettings(settingsPath: string): any {
   if (!existsSync(settingsPath)) return {};
   const raw = readFileSync(settingsPath, "utf8") || "{}";
@@ -69,6 +80,11 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
   settings.hooks.PreToolUse ??= [];
   ensureMatcher(settings.hooks.PreToolUse, "Bash", [`${ktBin} hook-guard`, `${ktBin} hook-compress`]);
   ensureMatcher(settings.hooks.PreToolUse, "Read", [`${ktBin} hook-guard`]);
+
+  // hooks.UserPromptSubmit: chặn lượt đầu tiên sau khi cache chết. Phải là hook TRƯỚC-khi-gửi;
+  // statusline vẽ lại sau khi request đã đi nên chỉ kịp báo hoá đơn, không kịp cản.
+  settings.hooks.UserPromptSubmit ??= [];
+  ensureHook(settings.hooks.UserPromptSubmit, `${ktBin} hook-prompt`);
 
   // permissions.allow: lệnh sau rewrite là `kt run -- ...` nên allowlist cũ (vd Bash(bun test:*))
   // không khớp nữa → tự thêm để user khỏi bị prompt lại sau mỗi lần wrap.
@@ -120,6 +136,8 @@ export function runDoctor(home: string = homedir()): string {
     lines.push(`statusLine kt: ${hasStatus ? "✓" : "✗"}`);
     lines.push(`hook-guard:    ${cmds.includes("kt hook-guard") ? "✓" : "✗"}`);
     lines.push(`hook-compress: ${cmds.includes("kt hook-compress") ? "✓" : "✗"}`);
+    const promptCmds = (cfg.hooks?.UserPromptSubmit ?? []).flatMap((b: Matcher) => b.hooks?.map((h) => h.command) ?? []);
+    lines.push(`hook-prompt:  ${promptCmds.includes("kt hook-prompt") ? "✓" : "✗"}`);
     lines.push(`permission kt run: ${allow.includes("Bash(kt run:*)") ? "✓" : "✗ (thiếu Bash(kt run:*) trong permissions.allow)"}`);
   }
   for (const name of ["concise-output", "lean-code"]) {

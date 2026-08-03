@@ -56,7 +56,7 @@ const IDLE_SHOW_MIN = 10;
 // TTL cache 1 giờ (Claude Code dùng bản 1h). Xem README → Where the money goes.
 export const CACHE_TTL_MIN = 60;
 
-function fmtIdle(min: number): string {
+export function fmtIdle(min: number): string {
   const m = Math.round(min);
   return m < 60 ? `${m}ph` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
 }

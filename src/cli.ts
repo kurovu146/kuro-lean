@@ -87,6 +87,16 @@ async function main() {
       }
       return;
     }
+    case "hook-prompt": {
+      if (process.env.KT_DISABLE === "1") return;
+      let input: any;
+      try { input = JSON.parse((await readStdin()) || "{}"); }
+      catch { return; }   // malformed stdin → no-op, đừng chặn oan lượt của user
+      const { promptGuardOutput } = await import("./hooks/prompt");
+      const out = promptGuardOutput(input, config);
+      if (out) process.stdout.write(out);
+      return;
+    }
     case "hook-guard": {
       if (process.env.KT_DISABLE === "1") return;   // kill-switch: tắt cả guard
       let input: any;
@@ -154,7 +164,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|show|doctor|bench>\n");
+      process.stdout.write("kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|hook-prompt|show|doctor|bench>\n");
   }
 }
 

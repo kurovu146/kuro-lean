@@ -20,7 +20,7 @@ It works in two layers:
 
 ```bash
 bun link            # put `kt` on your PATH
-kt init             # (Claude Code) register the PreToolUse hook + status line in ~/.claude/settings.json
+kt init             # (Claude Code) register the PreToolUse + UserPromptSubmit hooks and the status line
 kt doctor           # verify the setup
 ```
 
@@ -47,7 +47,9 @@ kt doctor           # verify the setup
 
 **Why the difference:** Claude Code exposes a `PreToolUse` hook that can *rewrite* a shell command
 (`updatedInput`) and *block* it (`permissionDecision: deny`) before it runs — that's the mechanism
-`kt init` wires up. Other agents don't expose an equivalent "intercept and rewrite the shell command"
+`kt init` wires up. It also exposes `UserPromptSubmit`, which can cancel a turn *before* it is sent —
+the only place a cache-expiry warning can still save money (`kt hook-prompt`).
+Other agents don't expose an equivalent "intercept and rewrite the shell command"
 hook, so the guard and transparent rewrite can't be replicated, and the status-line protocol is
 Claude Code–specific. The compression itself still works everywhere — you just invoke `kt run` yourself.
 
@@ -77,7 +79,8 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 ## Bypass / disable
 
 - `KT_RAW=1 kt run -- <cmd>` — run without compression.
-- `KT_DISABLE=1` — kill switch: the hook stops rewriting **and** the guard stops blocking.
+- `KT_DISABLE=1` — kill switch: the hook stops rewriting, the guard stops blocking, **and**
+  `hook-prompt` stops holding turns back.
 
 ## Subcommands
 
@@ -112,6 +115,16 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   of the file, and still carries the working context. No model call, no cost, nothing running in the
   background: the extract *is* what the new session needs, so there is no point paying another model
   to summarize it first.
+- `kt hook-prompt` — a `UserPromptSubmit` hook that stops the **first** turn sent after the cache has
+  expired, before the request leaves your machine. Warning about a dead cache from the status line is
+  too late by construction: the status line only re-renders *after* the turn has been sent, so by the
+  time the snowflake appears you have already paid the reload. This hook runs first and returns
+  `{"decision":"block"}`, so that turn costs nothing, and shows what it would have cost plus the two
+  ways out (resume anyway with ↑ Enter, or `/clear` + `kt handoff --recover`). It blocks exactly once
+  per expiry — the marker is keyed to the transcript's mtime, so re-sending goes straight through and
+  you never get stuck in a loop. Silent below `promptGuard.idleMin` minutes and below 50k tokens of
+  context, where a reload is only worth cents. On a live session it costs one `stat()` (~25 ms) and
+  reads nothing.
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
@@ -122,7 +135,9 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   - `🕐 42ph` / `❄️ 2h15 · nạp lại ~$5.00` — how long the session has been silent (from the
     transcript's mtime), shown once it passes 10 minutes. The snowflake means the 1-hour cache TTL
     has expired, so the next turn re-writes the whole context at 2× input — the number after it is
-    that bill. This is the moment `/clear` (or `kt handoff`) is worth the most.
+    that bill. This is the moment `/clear` (or `kt handoff`) is worth the most. Note this is a
+    *receipt*, not a warning — it can only appear once a turn has been sent. `kt hook-prompt` is the
+    part that gets there in time.
   - `$x.xx/lượt` is what it costs to re-read the current context on **every following turn**
     (`tokens × 0.1 × input price` — the cache-read rate). It grows as the context fills and is the
     cheapest reminder that `/clear` between unrelated tasks is worth money. Needs `model.id` in the
@@ -352,9 +367,14 @@ Optional per-project `kt.json` (deep-merged over defaults):
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
   "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } },
+  "promptGuard": { "idleMin": 60 },
   "pricing": { "claude-opus-5": { "input": 5, "output": 25 }, "claude-sonnet-5": { "input": 3, "output": 15 } }
 }
 ```
+
+`promptGuard.idleMin` is the silence, in minutes, after which `kt hook-prompt` blocks one turn to ask
+whether you really want to reload the context. It defaults to 60 because that is the cache TTL —
+lower it only if you are on the 5-minute TTL; `0` turns the hook off.
 
 `pricing` is USD per 1M tokens, keyed by model-id **prefix** (longest match wins, so
 `claude-haiku-4-5-20251001` resolves via `claude-haiku-4-5`). It is merged over the built-in table
