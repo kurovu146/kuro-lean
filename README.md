@@ -122,9 +122,11 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   `{"decision":"block"}`, so that turn costs nothing, and shows what it would have cost plus the two
   ways out (resume anyway with ↑ Enter, or `/clear` + `kt handoff --recover`). It blocks exactly once
   per expiry — the marker is keyed to the transcript's mtime, so re-sending goes straight through and
-  you never get stuck in a loop. Silent below `promptGuard.idleMin` minutes and below 50k tokens of
-  context, where a reload is only worth cents. On a live session it costs one `stat()` (~25 ms) and
-  reads nothing.
+  you never get stuck in a loop. Silent below `promptGuard.idleMin` minutes of silence and below
+  `promptGuard.minTokens` of context, where a reload is only worth cents. On a live session it costs
+  one `stat()` (~25 ms) and reads nothing. To see it work without waiting an hour, drop a
+  `kt.json` with `{"promptGuard": {"idleMin": 1, "minTokens": 1000}}` in a scratch directory, start a
+  session there, idle for a minute, then send anything.
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
@@ -367,14 +369,16 @@ Optional per-project `kt.json` (deep-merged over defaults):
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
   "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } },
-  "promptGuard": { "idleMin": 60 },
+  "promptGuard": { "idleMin": 60, "minTokens": 50000 },
   "pricing": { "claude-opus-5": { "input": 5, "output": 25 }, "claude-sonnet-5": { "input": 3, "output": 15 } }
 }
 ```
 
 `promptGuard.idleMin` is the silence, in minutes, after which `kt hook-prompt` blocks one turn to ask
 whether you really want to reload the context. It defaults to 60 because that is the cache TTL —
-lower it only if you are on the 5-minute TTL; `0` turns the hook off.
+lower it only if you are on the 5-minute TTL; `0` turns the hook off. `minTokens` is the context size
+below which it stays quiet regardless (default 50k ≈ $0.50 on Opus): interrupting you to save pocket
+change is a worse trade than the reload.
 
 `pricing` is USD per 1M tokens, keyed by model-id **prefix** (longest match wins, so
 `claude-haiku-4-5-20251001` resolves via `claude-haiku-4-5`). It is merged over the built-in table

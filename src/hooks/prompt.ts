@@ -12,9 +12,6 @@ import { latestTranscript } from "../recover";
  * UserPromptSubmit chạy trước, và `decision: "block"` huỷ luôn lượt đó => không tốn gì.
  */
 
-// Dưới ngưỡng này nạp lại chỉ vài xu — chặn chỉ tổ phiền, không đáng.
-const MIN_TOKENS = 50_000;
-
 export interface PromptFacts {
   idleMinutes: number;
   tokens: number;
@@ -22,12 +19,18 @@ export interface PromptFacts {
   alreadyWarned: boolean;
 }
 
+export interface PromptGuardConfig {
+  idleMin: number;
+  /** Dưới ngưỡng này nạp lại chỉ vài xu — chặn chỉ tổ phiền, không đáng. */
+  minTokens: number;
+}
+
 /** Có nên chặn lượt này không (PURE). null = cho đi bình thường. */
-export function decidePromptGuard(f: PromptFacts, cfg: { idleMin: number }): { reason: string } | null {
+export function decidePromptGuard(f: PromptFacts, cfg: PromptGuardConfig): { reason: string } | null {
   if (cfg.idleMin <= 0) return null; // tắt
   if (f.idleMinutes < cfg.idleMin) return null; // cache còn sống, gửi đi còn được gia hạn TTL
   if (f.alreadyWarned) return null; // đã cảnh báo cho đúng lần chết này → đừng chặn vòng lặp
-  if (f.tokens < MIN_TOKENS) return null;
+  if (f.tokens < cfg.minTokens) return null;
 
   const tok = `${Math.round(f.tokens / 1000)}k token`;
   const money = f.price
@@ -118,10 +121,10 @@ export interface PromptHookInput {
  */
 export function promptGuardOutput(
   input: PromptHookInput,
-  cfg: { promptGuard: { idleMin: number }; pricing: PricingTable },
+  cfg: { promptGuard: PromptGuardConfig; pricing: PricingTable },
   now: number = Date.now(),
 ): string | null {
-  const idleMin = cfg.promptGuard?.idleMin ?? 0;
+  const { idleMin, minTokens } = cfg.promptGuard ?? { idleMin: 0, minTokens: 0 };
   if (idleMin <= 0) return null;
 
   let path = input.transcript_path;
@@ -148,7 +151,7 @@ export function promptGuardOutput(
       price: model ? priceOf(model, cfg.pricing) : null,
       alreadyWarned: hasWarned(state, mtime),
     },
-    { idleMin },
+    { idleMin, minTokens },
   );
   if (!decision) return null;
 

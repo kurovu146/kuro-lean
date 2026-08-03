@@ -18,7 +18,7 @@ export interface Config {
   store: { keepRuns: number };
   statusline: { warnPct: number; dangerPct: number };
   guard: GuardConfig;
-  promptGuard: { idleMin: number };
+  promptGuard: import("./hooks/prompt").PromptGuardConfig;
   pricing: PricingTable;
 }
 
@@ -37,7 +37,7 @@ export const defaultConfig: Config = {
   guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, gitLogP: true, catBig: true, readNoise: true } },
   // Chặn lượt đầu tiên sau khi cache chết (TTL 1h) để hỏi lại: tiếp phiên cũ hay `kt handoff
   // --recover` cho rẻ. Chặn TRƯỚC khi request rời máy nên không mất tiền nạp lại. 0 = tắt.
-  promptGuard: { idleMin: 60 },
+  promptGuard: { idleMin: 60, minTokens: 50_000 },
   // USD/1M token, khớp theo tiền tố model id. Giá đổi theo thời gian → sửa trong kt.json,
   // model không có ở đây thì `kt cost` bỏ qua (thà thiếu còn hơn báo sai tiền).
   pricing: {

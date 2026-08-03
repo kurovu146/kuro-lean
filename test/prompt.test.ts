@@ -26,7 +26,7 @@ function fakeTranscript(tokens: number, idleMin: number, model = "claude-opus-5"
 test("cache còn sống => không chặn (chặn lúc này là phá đám vô cớ)", () => {
   const d = decidePromptGuard(
     { idleMinutes: 42, tokens: 500_000, price: PRICE, alreadyWarned: false },
-    { idleMin: 60 },
+    { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).toBeNull();
 });
@@ -34,7 +34,7 @@ test("cache còn sống => không chặn (chặn lúc này là phá đám vô c�
 test("quá TTL => chặn, nêu rõ thời gian im và giá nạp lại", () => {
   const d = decidePromptGuard(
     { idleMinutes: 192, tokens: 500_000, price: PRICE, alreadyWarned: false },
-    { idleMin: 60 },
+    { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).not.toBeNull();
   expect(d!.reason).toContain("3h12"); // 192 phút
@@ -45,7 +45,7 @@ test("quá TTL => chặn, nêu rõ thời gian im và giá nạp lại", () => {
 test("đã cảnh báo cho đúng lần chết này => cho qua, không chặn vòng lặp", () => {
   const d = decidePromptGuard(
     { idleMinutes: 192, tokens: 500_000, price: PRICE, alreadyWarned: true },
-    { idleMin: 60 },
+    { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).toBeNull();
 });
@@ -53,7 +53,7 @@ test("đã cảnh báo cho đúng lần chết này => cho qua, không chặn v�
 test("idleMin = 0 => tắt hẳn tính năng", () => {
   const d = decidePromptGuard(
     { idleMinutes: 9999, tokens: 500_000, price: PRICE, alreadyWarned: false },
-    { idleMin: 0 },
+    { idleMin: 0, minTokens: 50_000 },
   );
   expect(d).toBeNull();
 });
@@ -61,7 +61,7 @@ test("idleMin = 0 => tắt hẳn tính năng", () => {
 test("không có giá model => vẫn cảnh báo, chỉ thiếu số tiền (đừng bịa tiền)", () => {
   const d = decidePromptGuard(
     { idleMinutes: 90, tokens: 300_000, price: null, alreadyWarned: false },
-    { idleMin: 60 },
+    { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).not.toBeNull();
   expect(d!.reason).not.toContain("$");
@@ -70,9 +70,17 @@ test("không có giá model => vẫn cảnh báo, chỉ thiếu số tiền (đ�
 test("context nhỏ => không đáng chặn, nạp lại rẻ hơn cả phiền phức", () => {
   const d = decidePromptGuard(
     { idleMinutes: 300, tokens: 8_000, price: PRICE, alreadyWarned: false },
-    { idleMin: 60 },
+    { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).toBeNull();
+});
+
+test("hạ minTokens => chặn cả context nhỏ (để thử nghiệm thu, và cho ai xài model đắt)", () => {
+  const d = decidePromptGuard(
+    { idleMinutes: 300, tokens: 8_000, price: PRICE, alreadyWarned: false },
+    { idleMin: 60, minTokens: 1_000 },
+  );
+  expect(d).not.toBeNull();
 });
 
 test("lastContextTokens: lấy usage của lượt CUỐI, không cộng dồn cả phiên", () => {
@@ -135,8 +143,16 @@ test("transcript không tồn tại và cwd không có phiên nào => im lặng"
   expect(out).toBeNull();
 });
 
-test("config: promptGuard mặc định 60 phút, khớp TTL cache", () => {
+test("config: promptGuard mặc định 60 phút (khớp TTL cache) và 50k token", () => {
   expect(defaultConfig.promptGuard.idleMin).toBe(60);
+  expect(defaultConfig.promptGuard.minTokens).toBe(50_000);
+});
+
+test("promptGuardOutput: minTokens từ config chứ không hardcode", () => {
+  const f = fakeTranscript(8_000, 300);
+  const cfg = { ...defaultConfig, promptGuard: { idleMin: 60, minTokens: 1_000 } };
+  expect(promptGuardOutput({ transcript_path: f }, defaultConfig)).toBeNull();
+  expect(promptGuardOutput({ transcript_path: f }, cfg)).not.toBeNull();
 });
 
 test("config: kt.json chỉ chỉnh idleMin vẫn giữ nguyên phần config còn lại", () => {
