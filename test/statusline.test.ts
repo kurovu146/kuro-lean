@@ -235,3 +235,21 @@ test("collectGit: cache trong TTL, recompute ngoài TTL", () => {
   // now=5000 → ngoài TTL → recompute; dir không phải repo → null
   expect(collectGit(dir, 5000)).toBeNull();
 });
+
+test("perTurn => hiện chi phí mỗi lượt kế tiếp trên L1 (context càng phình càng đắt)", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 30, context_window_size: 1_000_000 }, model: { display_name: "Opus 5" } },
+    cfg,
+    { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null, perTurn: 0.104 },
+  );
+  expect(s.split("\n")[0]).toContain("$0.10/lượt");
+});
+
+test("perTurn null/0 => ẩn hẳn, không in $0.00/lượt", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
+    cfg,
+    { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null, perTurn: null },
+  );
+  expect(s).not.toContain("/lượt");
+});

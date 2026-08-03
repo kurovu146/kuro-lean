@@ -91,13 +91,23 @@ Claude Code–specific. The compression itself still works everywhere — you ju
 - `kt stats` — savings report from real usage: total % saved (~tokens) + top commands still
   occupying context after compression (candidates for new patterns/guards). Data comes from
   `.kt/runs/index.jsonl`, one line per run, auto-trimmed.
+- `kt cost [dir]` — the actual bill, from real `usage` in the Claude Code transcripts for this
+  project (main session + subagents), broken down by **cache read / cache write / output / fresh
+  input** and by model. Prices come from `pricing` in `kt.json` (USD per 1M tokens, matched by model-id
+  prefix); a model with no entry is skipped rather than guessed at. This is the counterpart to
+  `kt stats`: `stats` measures the shell output kt compressed, `cost` measures where the money
+  actually goes — usually not the same place. See [Where the money goes](#where-the-money-goes).
 - `kt status` — render a 3-line status line (reads JSON from stdin):
-  - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost`
+  - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`
   - `📝 +/- · ✅ todo · 🔧 tools · ♻️ ~saved`
   - ⏳quota + 📋plan + ✅todo come from the CK-stack cache / transcript when available; they auto-hide otherwise.
   - ♻️ shows tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4); hidden until
     the first compressed run.
+  - `$x.xx/lượt` is what it costs to re-read the current context on **every following turn**
+    (`tokens × 0.1 × input price` — the cache-read rate). It grows as the context fills and is the
+    cheapest reminder that `/clear` between unrelated tasks is worth money. Needs `model.id` in the
+    status-line JSON and a matching `pricing` entry; hidden otherwise.
 - `kt bench [--runs N] [--model M] [--max-turns T] [--keep]` — A/B benchmark end-to-end: runs REAL headless
   Claude Code sessions on a seeded bug-fix task, `baseline` arm (hooks disabled via `KT_DISABLE=1`) vs `kt` arm
   (hook wired in workspace settings), reports median context tokens / output tokens / cost / turns / duration.
@@ -160,8 +170,42 @@ extra agent turns — measure with `kt bench` before trusting it.
 
 **Where kt still earns its place:** capping the rare huge dump, the guard (blocking `find /`,
 `cat` on a 5 MB file, whole lock files) before those tokens ever exist, and the two skills it
-installs (`concise-output`, `lean-code`) which trim the model's *own* output — the priciest tokens.
+installs (`concise-output`, `lean-code`) which trim the model's *own* output.
 Treat `♻️ saved` as "disasters averted", not as a running discount.
+
+### Where the money goes
+
+Same transcripts, 93,124 assistant messages with `usage`, priced at list rates (cache write at the
+1-hour-TTL 2× multiplier):
+
+| Token kind | Multiplier | Share of the bill |
+|---|---|---:|
+| cache read | 0.1× input | **45%** |
+| cache write | 2× input | **44%** |
+| output | 5× input | 10% |
+| fresh input | 1× | 0.3% |
+
+Output is the priciest token *per token* and still only a tenth of the bill. The 89% is the cost of
+**putting things into the context and carrying them**, because a token you load is billed twice over:
+
+```
+cost of 1 loaded token = 2× input  (cache write, once)
+                       + 0.1× input × turns remaining  (re-read every turn)
+```
+
+On Opus 5 with 30 turns left that is $10 + $15 per million — **more than a token the model writes**
+($25/M). A whole-file `Read` early in a long session outcosts the code generated from it.
+
+Two consequences worth internalizing, both of which kt can only *show* you, not fix:
+
+1. The lever is not compressing what arrives — it is **not loading it**, and **not carrying it** (`/clear`
+   between unrelated tasks; subagents, whose context dies with them instead of being re-read every turn).
+2. Filtering individual operations can't reach this. Measured on the same data, a guard that blocked
+   un-`limit`ed `Read`s of ≥20k chars nets ~0.3% — the extra turns it forces eat most of what it saves,
+   the same trap the `rawUnderChars` benchmark found. That is why no such rule ships here.
+
+`kt cost` prints this table for your own project. `$x.xx/lượt` on the status line is the same
+arithmetic applied live to the session you're in.
 
 ## Guard — block token-hungry calls before they run
 
@@ -264,9 +308,15 @@ Optional per-project `kt.json` (deep-merged over defaults):
   "run": { "timeoutMs": 120000, "rawUnderChars": 4000 },
   "store": { "keepRuns": 50 },
   "statusline": { "warnPct": 60, "dangerPct": 85 },
-  "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } }
+  "guard": { "maxCatKb": 100, "maxReadKb": 500, "rules": { "findRoot": true, "npmLs": true, "treeNoDepth": true, "gitLogP": true, "catBig": true, "readNoise": true } },
+  "pricing": { "claude-opus-5": { "input": 5, "output": 25 }, "claude-sonnet-5": { "input": 3, "output": 15 } }
 }
 ```
+
+`pricing` is USD per 1M tokens, keyed by model-id **prefix** (longest match wins, so
+`claude-haiku-4-5-20251001` resolves via `claude-haiku-4-5`). It is merged over the built-in table
+rather than replacing it — override only what has changed. List prices move; this is the one knob to
+correct when `kt cost` looks off.
 
 Full logs are stored under `.kt/runs/` (last `keepRuns` kept) — already in `.gitignore`.
 

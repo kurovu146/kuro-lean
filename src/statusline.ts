@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
 import { readMeta } from "./store";
+import { perTurnCost, type PricingTable } from "./cost";
 
 export interface StatuslineInput {
   cwd?: string;
@@ -42,6 +43,9 @@ export interface Extras {
   plan: string | null;
   cost?: number | null; // cost của riêng phiên hiện tại (reset khi /clear); undefined => fallback input.cost
   savedTokens?: number | null; // token kt đã tiết kiệm (từ .kt/runs/index.jsonl); null/0 => ẩn
+  // USD phải trả để đọc lại context cho MỖI lượt kế tiếp (cache read). Context phình =>
+  // mỗi lần gõ Enter đắt thêm, kể cả khi không nạp gì mới. null/0 => ẩn.
+  perTurn?: number | null;
 }
 
 // Đệm autocompact — khớp cách Claude Code tính % trong /context.
@@ -117,6 +121,7 @@ export function renderStatusline(
   // Ưu tiên cost đã neo theo phiên (reset khi /clear); fallback total tích luỹ từ Claude Code.
   const cost = extras?.cost ?? input.cost?.total_cost_usd;
   if (cost != null) l1.push(`$${cost.toFixed(2)}`);
+  if (extras?.perTurn) l1.push(`$${extras.perTurn.toFixed(2)}/lượt`);
   const lines = [l1.join(" · ")];
 
   if (extras) {
@@ -340,9 +345,11 @@ export function collectSavedTokens(cwd: string): number | null {
   }
 }
 
-export function collectExtras(input: StatuslineInput): Extras {
+export function collectExtras(input: StatuslineInput, pricing?: PricingTable): Extras {
   const dir = input.cwd || process.cwd();
   const { tools, todos } = parseTranscript(input.transcript_path);
+  const cw = input.context_window ?? {};
+  const modelId = input.model?.id;
   return {
     dir,
     git: collectGit(dir),
@@ -352,5 +359,7 @@ export function collectExtras(input: StatuslineInput): Extras {
     plan: readActivePlan(input.session_id),
     cost: sessionCost(input),
     savedTokens: collectSavedTokens(dir),
+    // cần model *id* (vd claude-opus-5) — display_name ("Opus 5") không khớp bảng giá.
+    perTurn: pricing && modelId ? perTurnCost(totalTokens(cw), modelId, pricing) : null,
   };
 }

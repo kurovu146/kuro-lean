@@ -3,6 +3,7 @@ import { runAndCompress } from "./pipeline";
 import { renderStatusline, collectExtras, type StatuslineInput } from "./statusline";
 import { showRun, readMeta } from "./store";
 import { renderStats } from "./stats";
+import { renderCost, collectUsage, transcriptDir } from "./cost";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
@@ -39,7 +40,16 @@ async function main() {
     }
     case "status": {
       const input = JSON.parse((await readStdin()) || "{}") as StatuslineInput;
-      process.stdout.write(renderStatusline(input, config.statusline, collectExtras(input)));
+      process.stdout.write(
+        renderStatusline(input, config.statusline, collectExtras(input, config.pricing)),
+      );
+      return;
+    }
+    case "cost": {
+      // Hoá đơn thật, quy từ usage trong transcript. Khác `kt stats` (chỉ đếm chars nén được):
+      // phần lớn tiền nằm ở cache read/write của context, không ở output shell.
+      const dir = transcriptDir(rest[0] || process.cwd());
+      process.stdout.write(renderCost(collectUsage(dir), config.pricing));
       return;
     }
     case "hook-compress": {
@@ -122,7 +132,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|stats|init|hook-compress|hook-guard|show|doctor|bench>\n");
+      process.stdout.write("kt <run|status|stats|cost|init|hook-compress|hook-guard|show|doctor|bench>\n");
   }
 }
 

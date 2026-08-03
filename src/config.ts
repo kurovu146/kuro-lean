@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { Profile } from "./detect";
 import type { GenericOpts } from "./compressors/types";
+import type { PricingTable } from "./cost";
 
 export interface GuardConfig {
   maxCatKb: number;
@@ -17,6 +18,7 @@ export interface Config {
   store: { keepRuns: number };
   statusline: { warnPct: number; dangerPct: number };
   guard: GuardConfig;
+  pricing: PricingTable;
 }
 
 export const defaultConfig: Config = {
@@ -32,6 +34,19 @@ export const defaultConfig: Config = {
   store: { keepRuns: 50 },
   statusline: { warnPct: 60, dangerPct: 85 },
   guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, gitLogP: true, catBig: true, readNoise: true } },
+  // USD/1M token, khớp theo tiền tố model id. Giá đổi theo thời gian → sửa trong kt.json,
+  // model không có ở đây thì `kt cost` bỏ qua (thà thiếu còn hơn báo sai tiền).
+  pricing: {
+    "claude-fable-5": { input: 10, output: 50 },
+    "claude-mythos-5": { input: 10, output: 50 },
+    "claude-opus-5": { input: 5, output: 25 },
+    "claude-opus-4-8": { input: 5, output: 25 },
+    "claude-opus-4-7": { input: 5, output: 25 },
+    "claude-opus-4-6": { input: 5, output: 25 },
+    "claude-sonnet-5": { input: 3, output: 15 },
+    "claude-sonnet-4-6": { input: 3, output: 15 },
+    "claude-haiku-4-5": { input: 1, output: 5 },
+  },
 };
 
 export function loadConfig(cwd: string = process.cwd()): Config {
@@ -49,6 +64,7 @@ export function loadConfig(cwd: string = process.cwd()): Config {
       store: { ...defaultConfig.store, ...user.store },
       statusline: { ...defaultConfig.statusline, ...user.statusline },
       guard: { ...defaultConfig.guard, ...user.guard, rules: { ...defaultConfig.guard.rules, ...user.guard?.rules } },
+      pricing: { ...defaultConfig.pricing, ...user.pricing },
     };
   } catch {
     return defaultConfig;
