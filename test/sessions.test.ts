@@ -67,13 +67,15 @@ test("skips sessions that are too short: nothing to rescue means nothing in the 
 
 // ---- the table to choose from ----
 
+// the home to shorten against is injected, never homedir() - on CI that is /home/runner and these fixtures would print absolute
+const HOME = "/Users/kuro";
 const rows = [
   { path: "/p/a.jsonl", cwd: "/Users/kuro/Dev/fb-auto-post", branch: "main", idleMinutes: 2, tokens: 263_000, model: "claude-opus-5", bytes: 2e6 },
   { path: "/p/b.jsonl", cwd: "/Users/kuro/Dev/kuro-lean", branch: "dev", idleMinutes: 312, tokens: 178_000, model: "claude-opus-5", bytes: 9e5 },
 ];
 
 test("session table: numbered, repo names with dashes preserved, with the reload price", () => {
-  const out = renderSessions(rows, defaultConfig.pricing);
+  const out = renderSessions(rows, defaultConfig.pricing, HOME);
 
   expect(out).toContain("1");
   expect(out).toContain("~/Dev/fb-auto-post (main)"); // must NOT become fb/auto/post
