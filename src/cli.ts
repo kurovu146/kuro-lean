@@ -8,6 +8,13 @@ import { handoffPrompt } from "./handoff";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
+import { existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
+
+/** Dưới ngưỡng này phiên chưa kịp có việc gì để cứu — đừng chen vào bảng chọn. */
+const MIN_SESSION_BYTES = 20_000;
+const LIST_LIMIT = 20;
 
 async function readStdin(): Promise<string> {
   const chunks: Uint8Array[] = [];
@@ -47,24 +54,49 @@ async function main() {
       return;
     }
     case "handoff": {
+      const { listSessions, parseHandoffArgs, renderSessions, resolveFrom } = await import("./sessions");
+      const args = parseHandoffArgs(rest);
+      const projectsRoot = join(homedir(), ".claude", "projects");
+
+      // --list: phiên bỏ dở trên TOÀN MÁY. Quên handoff thì thường quên luôn phiên nằm ở repo
+      // nào, mà --recover lại bám theo cwd — không có bảng này thì không biết đường mà cd.
+      if (args.mode === "list") {
+        const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: args.limit });
+        process.stdout.write(renderSessions(rows, config.pricing));
+        if (rows.length) process.stdout.write("\n  → kt handoff --recover --from <#> > cuu.md\n");
+        return;
+      }
+
       // --recover: cứu phiên đã mất cache (máy tắt, về gấp). Transcript nằm trên đĩa nên
       // đọc được bất cứ lúc nào — không cần cache, không cần resume phiên cũ.
-      if (rest[0] === "--recover") {
+      if (args.mode === "recover") {
         const { latestTranscript, extractTail, recoverPrompt } = await import("./recover");
         const { readFileSync } = await import("fs");
-        const n = Number(rest[1]) || 60;
-        const file = latestTranscript(transcriptDir(process.cwd()));
-        if (!file) {
-          process.stderr.write("kt: không tìm thấy transcript nào cho thư mục này\n");
+        // --from: chỉ thẳng phiên cần cứu. Không có nó thì "phiên gần nhất của cwd" rất dễ là
+        // phiên vừa mở để chạy lệnh, và nó che mất đúng phiên có việc.
+        let file: string | null;
+        if (args.from) {
+          const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: LIST_LIMIT });
+          file = resolveFrom(rows, args.from);
+          if (!file) {
+            process.stderr.write(`kt: không hiểu --from ${args.from} (xem \`kt handoff --list\`)\n`);
+            process.exit(1);
+          }
+        } else {
+          file = latestTranscript(transcriptDir(process.cwd()));
+        }
+        if (!file || !existsSync(file)) {
+          process.stderr.write("kt: không tìm thấy transcript nào (thử `kt handoff --list`)\n");
           process.exit(1);
         }
         const lines = readFileSync(file, "utf8").split("\n");
-        process.stdout.write(recoverPrompt(extractTail(lines, n), file));
+        process.stdout.write(recoverPrompt(extractTail(lines, args.n), file));
         return;
       }
+
       // In prompt để dán vào Claude trước khi nghỉ — chưng cất context xuống file,
       // phiên sau bắt đầu nhẹ thay vì resume cả đống lịch sử (xem README).
-      process.stdout.write(handoffPrompt(rest[0] || ".kt/handoff.md") + "\n");
+      process.stdout.write(handoffPrompt(args.file) + "\n");
       return;
     }
     case "cost": {

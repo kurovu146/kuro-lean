@@ -115,6 +115,20 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   of the file, and still carries the working context. No model call, no cost, nothing running in the
   background: the extract *is* what the new session needs, so there is no point paying another model
   to summarize it first.
+- `kt handoff --list [N]` — which session, in which repo? Forgetting to run `kt handoff` usually
+  means forgetting *where* you were too, and `--recover` on its own only looks at the current
+  directory. This lists abandoned sessions across the **whole machine**, newest first, with the repo
+  and branch, how long each has been silent, its context size and what a reload would cost — so you
+  can see at a glance which one is worth rescuing. It reads `cwd`/`gitBranch` from inside the
+  transcript rather than guessing from the directory name, which is encoded with dashes and cannot
+  be decoded (`kuro-lean` and `kuro/lean` collapse to the same thing). On a real machine
+  (1,901 transcripts / 900 MB) it runs in **0.03 s**: `stat()` filters first, and only the few
+  surviving files get a 16 KB head read (repo, branch) and a 64 KB tail read (usage).
+- `kt handoff --recover --from <#|path>` — rescue the session you *pointed at*, from anywhere. Plain
+  `--recover` takes the newest transcript of the current directory, and that is often the session you
+  just opened to run a command — which buries the one you actually wanted. `--from` takes a row number
+  from `--list` (or a path outright), so the repo you happen to be standing in stops mattering. An
+  out-of-range number is an error, never a guess at some other session.
 - `kt hook-prompt` — a `UserPromptSubmit` hook that stops the **first** turn sent after the cache has
   expired, before the request leaves your machine. Warning about a dead cache from the status line is
   too late by construction: the status line only re-renders *after* the turn has been sent, so by the
