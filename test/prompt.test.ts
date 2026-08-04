@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, writeFileSync, utimesSync } from "fs";
+import { mkdtempSync, writeFileSync, utimesSync, mkdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -10,6 +10,7 @@ import {
   promptGuardOutput,
 } from "../src/hooks/prompt";
 import { defaultConfig, loadConfig } from "../src/config";
+import { transcriptDir } from "../src/cost";
 
 const PRICE = { input: 5, output: 25 };
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-prompt-"));
@@ -141,6 +142,26 @@ test("chặn xong thì thôi: gửi lại ngay sau đó phải đi lọt", () =>
 test("transcript không tồn tại và cwd không có phiên nào => im lặng", () => {
   const out = promptGuardOutput({ transcript_path: "/khong/co.jsonl", cwd: "/khong/co/du/an" }, defaultConfig);
   expect(out).toBeNull();
+});
+
+test("phiên MỚI mở trong project còn phiên cũ bỏ dở => im lặng, không được vơ transcript phiên khác", () => {
+  // Lượt ĐẦU của một phiên: Claude Code truyền transcript_path đúng, nhưng file chưa được ghi
+  // (đo thật: hook thấy MISSING). Không có transcript của CHÍNH phiên này nghĩa là context còn
+  // rỗng — chẳng có gì để nạp lại, nên phải im. Lấy phiên gần nhất của project là lấy nhầm người.
+  const cwd = tmp();
+  const dir = transcriptDir(cwd);
+  mkdirSync(dir, { recursive: true });
+  try {
+    const cu = join(dir, "phien-cu.jsonl");
+    writeFileSync(cu, JSON.stringify({ message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 600_000 } } }));
+    const t = new Date(Date.now() - 300 * 60_000);
+    utimesSync(cu, t, t);
+
+    const out = promptGuardOutput({ transcript_path: join(dir, "phien-moi.jsonl"), cwd }, defaultConfig);
+    expect(out).toBeNull();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("config: promptGuard mặc định 60 phút (khớp TTL cache) và 50k token", () => {

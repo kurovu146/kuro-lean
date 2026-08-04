@@ -124,9 +124,14 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   per expiry — the marker is keyed to the transcript's mtime, so re-sending goes straight through and
   you never get stuck in a loop. Silent below `promptGuard.idleMin` minutes of silence and below
   `promptGuard.minTokens` of context, where a reload is only worth cents. On a live session it costs
-  one `stat()` (~25 ms) and reads nothing. To see it work without waiting an hour, drop a
-  `kt.json` with `{"promptGuard": {"idleMin": 1, "minTokens": 1000}}` in a scratch directory, start a
-  session there, idle for a minute, then send anything.
+  one `stat()` (~25 ms) and reads nothing. It only ever looks at the transcript of **the session it
+  was called from**, never the project's most recent one — a brand-new session has no transcript yet
+  (Claude Code writes it after the turn starts), which means an empty context with nothing to reload,
+  so the hook stays quiet. That is what keeps a fresh panel opened next to a session you abandoned
+  last night from being blocked over *that* session's bill. To see it work without waiting an hour,
+  drop a `kt.json` with `{"promptGuard": {"idleMin": 1, "minTokens": 1000}}` in a scratch directory,
+  start a session there, **send one message** (so the session has a transcript), idle for a minute,
+  then send another.
 - `kt status` — render a 3-line status line (reads JSON from stdin):
   - `🟢 model (ctx) · bar % · ~tok · ⏳quota · $cost · $x.xx/lượt`
   - `📁 dir · 🌿 branch ↑↓ · 📋 plan`

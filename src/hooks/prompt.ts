@@ -2,9 +2,8 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
-import { CACHE_READ_MULT, CACHE_WRITE_MULT, priceOf, transcriptDir, type Price, type PricingTable } from "../cost";
+import { CACHE_READ_MULT, CACHE_WRITE_MULT, priceOf, type Price, type PricingTable } from "../cost";
 import { fmtIdle } from "../statusline";
-import { latestTranscript } from "../recover";
 
 /**
  * Cảnh báo TRƯỚC khi request rời máy. Statusline chỉ vẽ lại SAU khi đã gửi, nên nó là
@@ -127,11 +126,12 @@ export function promptGuardOutput(
   const { idleMin, minTokens } = cfg.promptGuard ?? { idleMin: 0, minTokens: 0 };
   if (idleMin <= 0) return null;
 
-  let path = input.transcript_path;
-  if (!path || !existsSync(path)) {
-    path = latestTranscript(transcriptDir(input.cwd || process.cwd())) ?? undefined;
-  }
-  if (!path) return null;
+  // CHỈ transcript của chính phiên này. Không có file (lượt đầu của phiên mới — Claude Code
+  // ghi transcript sau khi lượt bắt đầu) nghĩa là context còn rỗng: không có gì để nạp lại.
+  // Từng fallback sang phiên gần nhất của project, và nó chặn oan mọi panel mới mở cạnh một
+  // phiên bỏ dở — lấy số liệu của người khác gán cho phiên này.
+  const path = input.transcript_path;
+  if (!path || !existsSync(path)) return null;
 
   let mtime: number;
   try {
