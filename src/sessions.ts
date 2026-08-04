@@ -157,20 +157,30 @@ export function resolveFrom(rows: SessionRow[], arg: string): string | null {
 }
 
 export type HandoffArgs =
-  | { mode: "prompt"; file: string }
+  | { mode: "prompt"; file: string; copy: boolean }
   | { mode: "list"; limit: number }
-  | { mode: "recover"; n: number; from: string | null };
+  | { mode: "recover"; n: number; from: string | null; copy: boolean };
 
 /** Đọc cờ của `kt handoff`. Tách rời khỏi I/O để test được mà không cần dựng CLI. */
 export function parseHandoffArgs(rest: string[]): HandoffArgs {
-  if (rest[0] === "--list") return { mode: "list", limit: Number(rest[1]) || 10 };
-  if (rest[0] === "--recover") {
-    const tail = rest.slice(1);
+  const copy = rest.includes("--copy");
+  const args = rest.filter((a) => a !== "--copy"); // lọc trước, kẻo thành tên file
+  if (args[0] === "--list") return { mode: "list", limit: Number(args[1]) || 10 };
+  if (args[0] === "--recover") {
+    const tail = args.slice(1);
     const i = tail.indexOf("--from");
     const from = i >= 0 ? tail[i + 1] ?? null : null;
     // Bỏ cả cặp `--from X` rồi mới tìm N, kẻo `--from 2` bị đọc thành "2 message cuối".
     const nums = tail.filter((_, k) => i < 0 || (k !== i && k !== i + 1)).filter((a) => /^\d+$/.test(a));
-    return { mode: "recover", n: Number(nums[0]) || 60, from };
+    return { mode: "recover", n: Number(nums[0]) || 60, from, copy };
   }
-  return { mode: "prompt", file: rest[0] || ".kt/handoff.md" };
+  return { mode: "prompt", file: args[0] || ".kt/handoff.md", copy };
+}
+
+/** Lệnh clipboard theo hệ điều hành. null = không biết → nói thẳng, đừng nuốt im lặng. */
+export function clipboardCommand(platform: string): { cmd: string; args: string[] } | null {
+  if (platform === "darwin") return { cmd: "pbcopy", args: [] };
+  if (platform === "win32") return { cmd: "clip", args: [] };
+  if (platform === "linux") return { cmd: "xclip", args: ["-selection", "clipboard"] };
+  return null;
 }

@@ -124,6 +124,12 @@ Claude Code–specific. The compression itself still works everywhere — you ju
   be decoded (`kuro-lean` and `kuro/lean` collapse to the same thing). On a real machine
   (1,901 transcripts / 900 MB) it runs in **0.03 s**: `stat()` filters first, and only the few
   surviving files get a 16 KB head read (repo, branch) and a 64 KB tail read (usage).
+- `kt handoff [--recover] --copy` — put the text straight on the clipboard, which is where it was
+  always headed: this output exists to be **pasted** into a fresh session. Writing it to a file means
+  remembering where the file went and opening it to copy — two extra steps at the exact moment you
+  are in a hurry. Prints the size to stderr (so `> cuu.md` still works unpolluted), and says so
+  plainly if it doesn't know the clipboard command for your platform instead of failing quietly.
+  `pbcopy` on macOS, `clip` on Windows, `xclip -selection clipboard` on Linux.
 - `kt handoff --recover --from <#|path>` — rescue the session you *pointed at*, from anywhere. Plain
   `--recover` takes the newest transcript of the current directory, and that is often the session you
   just opened to run a command — which buries the one you actually wanted. `--from` takes a row number

@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
+import { clipboardCommand, listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
 import { defaultConfig } from "../src/config";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-sessions-"));
@@ -97,8 +97,8 @@ test("--from trỏ ra ngoài bảng => null, đừng đoán bừa một phiên",
 // ---- đọc cờ dòng lệnh ----
 
 test("kt handoff không cờ => vẫn là prompt chốt phiên như cũ", () => {
-  expect(parseHandoffArgs([])).toEqual({ mode: "prompt", file: ".kt/handoff.md" });
-  expect(parseHandoffArgs(["ghi-chu.md"])).toEqual({ mode: "prompt", file: "ghi-chu.md" });
+  expect(parseHandoffArgs([])).toEqual({ mode: "prompt", file: ".kt/handoff.md", copy: false });
+  expect(parseHandoffArgs(["ghi-chu.md"])).toEqual({ mode: "prompt", file: "ghi-chu.md", copy: false });
 });
 
 test("kt handoff --list [N] => liệt kê, N là số dòng", () => {
@@ -107,11 +107,11 @@ test("kt handoff --list [N] => liệt kê, N là số dòng", () => {
 });
 
 test("kt handoff --recover [N] --from X => giữ N cũ, thêm chỗ chỉ phiên", () => {
-  expect(parseHandoffArgs(["--recover"])).toEqual({ mode: "recover", n: 60, from: null });
-  expect(parseHandoffArgs(["--recover", "30"])).toEqual({ mode: "recover", n: 30, from: null });
-  expect(parseHandoffArgs(["--recover", "--from", "2"])).toEqual({ mode: "recover", n: 60, from: "2" });
+  expect(parseHandoffArgs(["--recover"])).toEqual({ mode: "recover", n: 60, from: null, copy: false });
+  expect(parseHandoffArgs(["--recover", "30"])).toEqual({ mode: "recover", n: 30, from: null, copy: false });
+  expect(parseHandoffArgs(["--recover", "--from", "2"])).toEqual({ mode: "recover", n: 60, from: "2", copy: false });
   expect(parseHandoffArgs(["--recover", "30", "--from", "/p/x.jsonl"])).toEqual({
-    mode: "recover", n: 30, from: "/p/x.jsonl",
+    mode: "recover", n: 30, from: "/p/x.jsonl", copy: false,
   });
 });
 
@@ -122,4 +122,20 @@ test("không đọc được usage => hiện '?', đừng hiện 0k làm anh tư
   );
   expect(out).toContain("? tok");
   expect(out).not.toContain("0k tok");
+});
+
+// ---- --copy: dán thẳng vào clipboard, khỏi phải đi tìm file ----
+
+test("--copy nhận ở mọi dạng lệnh, và không bị đọc nhầm thành tên file", () => {
+  expect(parseHandoffArgs(["--copy"])).toEqual({ mode: "prompt", file: ".kt/handoff.md", copy: true });
+  expect(parseHandoffArgs(["--recover", "--from", "3", "--copy"])).toEqual({
+    mode: "recover", n: 60, from: "3", copy: true,
+  });
+});
+
+test("clipboard: mỗi hệ điều hành một lệnh, không đoán bừa lệnh không có", () => {
+  expect(clipboardCommand("darwin")).toEqual({ cmd: "pbcopy", args: [] });
+  expect(clipboardCommand("win32")).toEqual({ cmd: "clip", args: [] });
+  expect(clipboardCommand("linux")).toEqual({ cmd: "xclip", args: ["-selection", "clipboard"] });
+  expect(clipboardCommand("freebsd")).toBeNull();
 });

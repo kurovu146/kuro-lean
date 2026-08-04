@@ -54,9 +54,36 @@ async function main() {
       return;
     }
     case "handoff": {
-      const { listSessions, parseHandoffArgs, renderSessions, resolveFrom } = await import("./sessions");
+      const { clipboardCommand, listSessions, parseHandoffArgs, renderSessions, resolveFrom } =
+        await import("./sessions");
       const args = parseHandoffArgs(rest);
       const projectsRoot = join(homedir(), ".claude", "projects");
+
+      /**
+       * `--copy`: bản trích sinh ra là để DÁN vào phiên mới, nên chặng cuối phải là clipboard.
+       * Ghi ra file thì còn phải nhớ file nằm đâu rồi mở lên copy — thừa hai bước ở đúng lúc
+       * đang vội. Báo số ký tự để biết có thật sự copy được gì không.
+       */
+      const emit = (text: string) => {
+        if (args.mode === "list" || !args.copy) {
+          process.stdout.write(text);
+          return;
+        }
+        const c = clipboardCommand(process.platform);
+        if (!c) {
+          process.stderr.write(`kt: không biết lệnh clipboard cho ${process.platform} — dùng \`> cuu.md\`\n`);
+          process.exit(1);
+        }
+        try {
+          Bun.spawnSync([c.cmd, ...c.args], { stdin: Buffer.from(text) });
+        } catch {
+          process.stderr.write(`kt: không chạy được \`${c.cmd}\` — dùng \`> cuu.md\`\n`);
+          process.exit(1);
+        }
+        process.stderr.write(
+          `✓ đã copy ${text.length.toLocaleString("vi-VN")} ch (~${Math.round(text.length / 4 / 100) / 10}k token) vào clipboard — dán vào phiên mới\n`,
+        );
+      };
 
       // --list: phiên bỏ dở trên TOÀN MÁY. Quên handoff thì thường quên luôn phiên nằm ở repo
       // nào, mà --recover lại bám theo cwd — không có bảng này thì không biết đường mà cd.
@@ -90,13 +117,13 @@ async function main() {
           process.exit(1);
         }
         const lines = readFileSync(file, "utf8").split("\n");
-        process.stdout.write(recoverPrompt(extractTail(lines, args.n), file));
+        emit(recoverPrompt(extractTail(lines, args.n), file));
         return;
       }
 
       // In prompt để dán vào Claude trước khi nghỉ — chưng cất context xuống file,
       // phiên sau bắt đầu nhẹ thay vì resume cả đống lịch sử (xem README).
-      process.stdout.write(handoffPrompt(args.file) + "\n");
+      emit(handoffPrompt(args.file) + "\n");
       return;
     }
     case "cost": {
