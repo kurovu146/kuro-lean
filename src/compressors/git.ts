@@ -9,17 +9,17 @@ export function compressGit(
   const total = countLines(combined);
 
   if (!/diff --git/.test(combined)) {
-    // status/log: để generic xử lý (nhỏ thì giữ nguyên)
+    // status/log: let generic handle it (small output is left alone)
     return generic(input, opts);
   }
 
-  // diff nhỏ → giữ NGUYÊN nội dung (Claude thường chạy `git diff` để ĐỌC thay đổi).
-  // Chỉ rút gọn shortstat khi diff lớn, tránh phản tác dụng (mất nội dung → phải chạy lại).
+  // A small diff → keep it VERBATIM (Claude usually runs `git diff` to READ the changes).
+  // Only summarise to a shortstat for large diffs, otherwise it backfires (content lost → run it again).
   if (total <= opts.thresholdLines) {
     return { text: combined, originalLines: total, compactLines: total };
   }
 
-  // diff lớn: gom theo file, đếm +/-
+  // Large diff: group by file, count +/-
   const files: { path: string; add: number; del: number }[] = [];
   let cur: { path: string; add: number; del: number } | null = null;
   for (const line of combined.split("\n")) {

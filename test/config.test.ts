@@ -4,13 +4,13 @@ import { loadConfig, defaultConfig } from "../src/config";
 
 const DIR = "/tmp/kt-test-config";
 
-test("không có kt.json => default", () => {
+test("no kt.json => defaults", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   expect(loadConfig(DIR).generic.thresholdLines).toBe(defaultConfig.generic.thresholdLines);
 });
 
-test("kt.json override merge nông", () => {
+test("kt.json overrides merge shallowly", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(`${DIR}/kt.json`, JSON.stringify({ generic: { thresholdLines: 5, headLines: 2, tailLines: 1 } }));
@@ -18,17 +18,17 @@ test("kt.json override merge nông", () => {
   expect(loadConfig(DIR).store.keepRuns).toBe(defaultConfig.store.keepRuns);
 });
 
-test("run.timeoutMs: có default 120s và merge được từ kt.json", () => {
+test("run.timeoutMs: defaults to 120s and merges from kt.json", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   expect(defaultConfig.run.timeoutMs).toBe(120_000);
   writeFileSync(`${DIR}/kt.json`, JSON.stringify({ run: { timeoutMs: 300_000 } }));
   expect(loadConfig(DIR).run.timeoutMs).toBe(300_000);
-  // override 1 field của run KHÔNG được làm rơi default field còn lại (chống regression merge nông)
+  // overriding one field of run must NOT drop the other defaults (shallow-merge regression guard)
   expect(loadConfig(DIR).run.rawUnderChars).toBe(4000);
 });
 
-test("run.rawUnderChars: merge được từ kt.json, giữ timeoutMs default", () => {
+test("run.rawUnderChars: merges from kt.json, keeps the default timeoutMs", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(`${DIR}/kt.json`, JSON.stringify({ run: { rawUnderChars: 0 } }));
@@ -36,7 +36,7 @@ test("run.rawUnderChars: merge được từ kt.json, giữ timeoutMs default", 
   expect(loadConfig(DIR).run.timeoutMs).toBe(120_000);
 });
 
-test("limits.maxChars: có default và merge được từ kt.json", () => {
+test("limits.maxChars: has a default and merges from kt.json", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   expect(defaultConfig.limits.maxChars).toBe(16_000);

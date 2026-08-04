@@ -28,11 +28,11 @@ test("parseClaudeJson: cộng dồn modelUsage nhiều model", () => {
   const m = parseClaudeJson(out)!;
   expect(m.costUsd).toBeCloseTo(0.0123);
   expect(m.numTurns).toBe(7);
-  expect(m.contextTokens).toBe(110 + 1100 + 55); // input + cacheRead + cacheCreate (modelUsage, KHÔNG phải usage)
+  expect(m.contextTokens).toBe(110 + 1100 + 55); // input + cacheRead + cacheCreate (modelUsage, NOT usage)
   expect(m.outputTokens).toBe(220);
 });
 
-test("parseClaudeJson: fallback sang usage khi không có modelUsage", () => {
+test("parseClaudeJson: falls back to usage when modelUsage is absent", () => {
   const out = JSON.stringify({
     type: "result", is_error: false, total_cost_usd: 0.5, duration_ms: 1000, num_turns: 2,
     usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30, cache_creation_input_tokens: 40 },
@@ -42,13 +42,13 @@ test("parseClaudeJson: fallback sang usage khi không có modelUsage", () => {
   expect(m.outputTokens).toBe(20);
 });
 
-test("parseClaudeJson: lấy dòng JSON cuối khi stdout lẫn dòng khác", () => {
+test("parseClaudeJson: takes the last JSON line when stdout carries other lines", () => {
   const json = JSON.stringify({ type: "result", is_error: false, total_cost_usd: 0.1, duration_ms: 1, num_turns: 1, usage: { input_tokens: 5, output_tokens: 6, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
-  const m = parseClaudeJson(`noise trước\n${json}`);
+  const m = parseClaudeJson(`noise before\n${json}`);
   expect(m?.outputTokens).toBe(6);
 });
 
-test("parseClaudeJson: rác hoặc is_error => null", () => {
+test("parseClaudeJson: junk or is_error => null", () => {
   expect(parseClaudeJson("not json at all")).toBeNull();
   expect(parseClaudeJson(JSON.stringify({ type: "result", is_error: true }))).toBeNull();
   expect(parseClaudeJson(JSON.stringify({ type: "system" }))).toBeNull();
@@ -56,23 +56,23 @@ test("parseClaudeJson: rác hoặc is_error => null", () => {
 
 // ---------- median / summarize ----------
 
-test("median: lẻ, chẵn, rỗng", () => {
+test("median: odd, even, empty", () => {
   expect(median([9, 1, 5])).toBe(5);
   expect(median([4, 1, 3, 2])).toBe(2.5);
   expect(median([])).toBe(0);
 });
 
-test("summarize: chỉ tính run có metrics VÀ qua gate test", () => {
+test("summarize: counts only runs with metrics AND a passing gate", () => {
   const m = (cost: number): RunMetrics => ({ costUsd: cost, durationMs: 1000, numTurns: 5, contextTokens: 100, outputTokens: 10 });
   const s = summarize("kt", [m(1), m(9), null, m(100)], [true, true, true, false]);
   expect(s.valid).toBe(2);
   expect(s.total).toBe(4);
-  expect(s.costUsd).toBe(5); // median của [1, 9]
+  expect(s.costUsd).toBe(5); // the median of [1, 9]
 });
 
 // ---------- formatReport ----------
 
-test("formatReport: bảng markdown + Δ âm khi kt rẻ hơn + số run hợp lệ", () => {
+test("formatReport: a markdown table + a negative delta when kt is cheaper + the valid run count", () => {
   const base = { arm: "baseline" as const, valid: 3, total: 3, costUsd: 0.10, contextTokens: 200000, outputTokens: 5000, numTurns: 10, durationMs: 60000 };
   const kt = { arm: "kt" as const, valid: 3, total: 3, costUsd: 0.05, contextTokens: 100000, outputTokens: 5000, numTurns: 10, durationMs: 50000 };
   const r = formatReport(base, kt);
@@ -83,12 +83,12 @@ test("formatReport: bảng markdown + Δ âm khi kt rẻ hơn + số run hợp l
 
 // ---------- fixture ----------
 
-test("writeFixture: bun test đỏ trước khi fix, xanh sau khi fix median", () => {
+test("writeFixture: bun test is red before the fix, green after fixing median", () => {
   const dir = freshDir();
   writeFixture(dir);
   const before = Bun.spawnSync(["bun", "test"], { cwd: dir });
-  expect(before.exitCode).not.toBe(0); // bug median → có test fail
-  // fix đúng: sort bản copy trước khi lấy giữa
+  expect(before.exitCode).not.toBe(0); // the median bug -> a failing test
+  // the correct fix: sort a copy before taking the middle
   const statsPath = `${dir}/src/stats.ts`;
   const fixed = readFileSync(statsPath, "utf8").replace(
     "const s = xs;",
@@ -101,7 +101,7 @@ test("writeFixture: bun test đỏ trước khi fix, xanh sau khi fix median", (
 
 // ---------- workspace / env / args / flags ----------
 
-test("prepareWorkspace: arm kt có .claude/settings.json với hook, baseline thì không", () => {
+test("prepareWorkspace: the kt arm gets .claude/settings.json with the hook, the baseline does not", () => {
   const dir = freshDir();
   prepareWorkspace(`${dir}/kt`, "kt");
   const cfg = JSON.parse(readFileSync(`${dir}/kt/.claude/settings.json`, "utf8"));
@@ -117,7 +117,7 @@ test("armEnv: baseline bật KT_DISABLE, kt tắt", () => {
   expect(armEnv("kt", { KT_DISABLE: "1" }).KT_DISABLE).toBeUndefined();
 });
 
-test("buildClaudeArgs: headless json, model + max-turns truyền vào", () => {
+test("buildClaudeArgs: headless json, model + max-turns passed through", () => {
   const args = buildClaudeArgs("claude-haiku-4-5-20251001", 15);
   expect(args[0]).toBe("claude");
   expect(args).toContain("--output-format");
@@ -137,11 +137,11 @@ test("parseBenchFlags: defaults + override", () => {
   expect(o).toEqual({ runs: 5, model: "sonnet", keep: true, maxTurns: 20 });
 });
 
-// ---------- runBench (fake spawn — không tốn quota) ----------
+// ---------- runBench (fake spawn - spends no quota) ----------
 
 import { runBench, type SpawnFn } from "../src/bench";
 
-test("runBench: 2 arm × N runs, env đúng theo arm, report từ metrics fake", async () => {
+test("runBench: 2 arms x N runs, correct env per arm, report built from fake metrics", async () => {
   const calls: { argv: string[]; cwd: string; env: Record<string, string | undefined> }[] = [];
   const fakeResult = (cost: number) => JSON.stringify({
     type: "result", is_error: false, total_cost_usd: cost, duration_ms: 30000, num_turns: 6,
@@ -150,7 +150,7 @@ test("runBench: 2 arm × N runs, env đúng theo arm, report từ metrics fake",
   const fake: SpawnFn = async (argv, opts) => {
     calls.push({ argv, cwd: opts.cwd, env: opts.env });
     if (argv[0] === "claude") {
-      // baseline đắt hơn kt để Δ âm
+      // the baseline is pricier than kt so the delta comes out negative
       return { stdout: fakeResult(opts.env.KT_DISABLE === "1" ? 0.2 : 0.1), exitCode: 0 };
     }
     return { stdout: "", exitCode: 0 }; // gate `bun test` xanh
@@ -165,7 +165,7 @@ test("runBench: 2 arm × N runs, env đúng theo arm, report từ metrics fake",
   expect(report).toContain("-50%"); // cost 0.2 → 0.1
 });
 
-test("runBench: claude lỗi hoặc gate đỏ => run không hợp lệ", async () => {
+test("runBench: a claude error or a red gate => the run is invalid", async () => {
   const fake: SpawnFn = async (argv) => {
     if (argv[0] === "claude") return { stdout: "boom", exitCode: 1 };
     return { stdout: "", exitCode: 1 };

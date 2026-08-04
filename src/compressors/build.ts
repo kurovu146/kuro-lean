@@ -8,7 +8,7 @@ export function compressBuild(input: CompressInput): CompressResult {
   const issues = combined.split("\n").filter((l) => ISSUE_RE.test(l));
 
   if (input.exitCode === 0 && issues.length === 0) {
-    const text = `✓ build OK (${total} dòng đã ẩn)`;
+    const text = `✓ build OK (${total} lines hidden)`;
     return { text, originalLines: total, compactLines: 1 };
   }
   if (issues.length === 0) {

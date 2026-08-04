@@ -2,12 +2,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-/** Giá USD trên 1 TRIỆU token. */
+/** Price in USD per 1 MILLION tokens. */
 export interface Price {
   input: number;
   output: number;
 }
-/** key = tiền tố model id (khớp dài nhất trước) → giá. */
+/** key = a model-id prefix (longest match wins) → its price. */
 export type PricingTable = Record<string, Price>;
 
 export interface Usage {
@@ -18,12 +18,12 @@ export interface Usage {
   output: number;
 }
 
-// Cache write = 2× giá input (TTL 1h; TTL 5 phút là 1.25×), cache read = 0.1×.
-// Đây là chỗ tiền thật nằm: 1 token nạp vào bị tính 1 lần write + 1 lần read MỖI lượt sau đó.
+// Cache write = 2× the input price (1h TTL; the 5-minute TTL is 1.25×), cache read = 0.1×.
+// This is where the money actually is: one token loaded is billed once as a write + once as a read on EVERY later turn.
 export const CACHE_WRITE_MULT = 2;
 export const CACHE_READ_MULT = 0.1;
 
-/** Khớp model theo tiền tố, ưu tiên khớp dài nhất (id thật hay kèm hậu tố ngày). */
+/** Match a model by prefix, longest match first (real ids often carry a date suffix). */
 export function priceOf(model: string, table: PricingTable): Price | null {
   let best: [string, Price] | null = null;
   for (const [prefix, price] of Object.entries(table)) {
@@ -40,7 +40,7 @@ export interface Tally {
   skipped: string[];
 }
 
-/** Quy usage ra tiền (PURE). Model ngoài bảng giá bị bỏ qua và liệt kê ở `skipped`. */
+/** Convert usage into money (PURE). Models absent from the price table are skipped and listed in `skipped`. */
 export function tallyUsage(rows: Usage[], table: PricingTable): Tally {
   const cost = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
   const tokens = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
@@ -88,24 +88,24 @@ function fmtTok(n: number): string {
 }
 
 /**
- * Báo cáo chi phí (PURE). Xếp theo tiền giảm dần — mục đích là chỉ ra khoản nào
- * thực sự chiếm hoá đơn, thường là cache read/write chứ không phải output.
+ * The cost report (PURE). Sorted by money descending — the point is to show which line actually owns
+ * the bill, which is usually cache read/write rather than output.
  */
 export function renderCost(rows: Usage[], table: PricingTable): string {
   if (rows.length === 0) {
-    return "(chưa có dữ liệu usage — cần vài phiên Claude Code trong project này trước đã)\n";
+    return "(no usage data yet — this project needs a few Claude Code sessions first)\n";
   }
   const t = tallyUsage(rows, table);
-  if (t.total === 0) return "(chưa có usage tính được tiền — model không có trong bảng giá kt.json)\n";
+  if (t.total === 0) return "(no priceable usage — the model isn't in the kt.json price table)\n";
 
   const kinds = [
-    ["cache read ", t.cost.cacheRead, t.tokens.cacheRead, `${CACHE_READ_MULT}× input · context đọc lại MỖI lượt`],
-    ["cache write", t.cost.cacheWrite, t.tokens.cacheWrite, `${CACHE_WRITE_MULT}× input · mỗi token nạp vào, 1 lần`],
+    ["cache read ", t.cost.cacheRead, t.tokens.cacheRead, `${CACHE_READ_MULT}× input · the context re-read on EVERY turn`],
+    ["cache write", t.cost.cacheWrite, t.tokens.cacheWrite, `${CACHE_WRITE_MULT}× input · once per token loaded`],
     ["output     ", t.cost.output, t.tokens.output, "model tự viết ra"],
-    ["fresh input", t.cost.input, t.tokens.input, "chưa vào cache"],
+    ["fresh input", t.cost.input, t.tokens.input, "not cached yet"],
   ] as const;
 
-  const lines = [`Chi phí quy từ usage thật · tổng ~$${t.total.toFixed(2)}`, ""];
+  const lines = [`Cost derived from real usage · total ~$${t.total.toFixed(2)}`, ""];
   for (const [label, c, tok, note] of [...kinds].sort((a, b) => b[1] - a[1])) {
     const pct = Math.round((c / t.total) * 100);
     lines.push(`  ${label} ${`$${c.toFixed(2)}`.padStart(10)} ${`${pct}%`.padStart(4)} · ${fmtTok(tok).padStart(6)} tok · ${note}`);
@@ -114,22 +114,22 @@ export function renderCost(rows: Usage[], table: PricingTable): string {
   for (const m of t.byModel) {
     lines.push(`  ${`$${m.cost.toFixed(2)}`.padStart(10)} · ${fmtTok(m.tokens).padStart(6)} tok · ${m.model}`);
   }
-  if (t.skipped.length) lines.push("", `(bỏ qua, chưa có giá: ${t.skipped.join(", ")})`);
+  if (t.skipped.length) lines.push("", `(skipped, no price: ${t.skipped.join(", ")})`);
   return lines.join("\n") + "\n";
 }
 
 /**
- * Chi phí đọc lại context cho MỖI lượt kế tiếp. Context càng phình thì mỗi lần
- * gõ Enter càng đắt — con số này làm điều đó nhìn thấy được. null nếu chưa có giá.
+ * The cost of re-reading the context on EVERY following turn. A fatter context makes each Enter more
+ * expensive — this number makes that visible. null when there is no price.
  */
 export function perTurnCost(tokens: number, model: string, table: PricingTable): number | null {
   const p = priceOf(model, table);
   return p ? (tokens / 1e6) * p.input * CACHE_READ_MULT : null;
 }
 
-// ---- Thu thập từ transcript (không pure) ----
+// ---- Collection from transcripts (not pure) ----
 
-/** Thư mục transcript Claude Code của một cwd: /a/b → ~/.claude/projects/-a-b */
+/** The Claude Code transcript directory for a cwd: /a/b → ~/.claude/projects/-a-b */
 export function transcriptDir(cwd: string, home: string = homedir()): string {
   return join(home, ".claude", "projects", cwd.replace(/\//g, "-"));
 }
@@ -151,7 +151,7 @@ function jsonlFiles(dir: string): string[] {
   return out;
 }
 
-/** Đọc usage từ transcript (gồm cả subagent). Dòng hỏng/thiếu usage bị bỏ qua. */
+/** Read usage from the transcripts (including subagents). Corrupt lines and lines without usage are skipped. */
 export function collectUsage(dir: string): Usage[] {
   const rows: Usage[] = [];
   for (const f of jsonlFiles(dir)) {

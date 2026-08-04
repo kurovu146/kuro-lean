@@ -5,14 +5,14 @@ import type { CompressInput } from "../src/compressors/types";
 
 const fx = (name: string) => readFileSync(`test/fixtures/${name}`, "utf8");
 
-test("pass => 1 dòng summary, không kèm chi tiết test", () => {
+test("pass => one summary line, no per-test detail", () => {
   const input: CompressInput = { stdout: fx("vitest-pass.txt"), stderr: "", exitCode: 0, command: "vitest run" };
   const r = compressTest(input);
   expect(r.compactLines).toBeLessThanOrEqual(2);
   expect(r.text).toContain("8 passed");
 });
 
-test("fail => GIỮ block lỗi đầy đủ", () => {
+test("fail => KEEP the whole error block", () => {
   const input: CompressInput = { stdout: fx("vitest-fail.txt"), stderr: "", exitCode: 1, command: "vitest run" };
   const r = compressTest(input);
   expect(r.text).toContain("AssertionError: expected 4 to be 5");
@@ -20,7 +20,7 @@ test("fail => GIỮ block lỗi đầy đủ", () => {
   expect(r.text).toContain("src/b.test.ts:12:20");
 });
 
-test("fail => run frame node_modules/node:internal liên tiếp gom thành 1 dòng", () => {
+test("fail => a run of consecutive node_modules/node:internal frames collapses to one line", () => {
   const stdout = [
     "FAIL src/calc.test.ts > cộng",
     "AssertionError: expected 4 to be 5",
@@ -31,14 +31,14 @@ test("fail => run frame node_modules/node:internal liên tiếp gom thành 1 dò
     "Tests: 1 failed",
   ].join("\n");
   const r = compressTest({ stdout, stderr: "", exitCode: 1, command: "jest" });
-  expect(r.text).toContain("at src/calc.test.ts:12:20"); // frame code mình: giữ nguyên
+  expect(r.text).toContain("at src/calc.test.ts:12:20"); // our own frame: kept
   expect(r.text).not.toContain("node_modules/expect");
   expect(r.text).not.toContain("node:internal");
-  expect(r.text).toContain("(3 frame lib đã ẩn)");
+  expect(r.text).toContain("(3 library frames hidden)");
   expect(r.text).toContain("Tests: 1 failed");
 });
 
-test("fail => frame lib đứng 1 mình thì giữ nguyên (gom không lời)", () => {
+test("fail => a lone library frame is kept as is (collapsing needs a run)", () => {
   const stdout = [
     "FAIL x",
     "Error: boom",

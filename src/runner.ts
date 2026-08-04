@@ -8,13 +8,13 @@ export interface RunResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-// Sau khi process exit/bị kill, chờ chừng này để flush nốt buffer rồi mới cắt reader.
+// After the process exits or is killed, wait this long to flush the remaining buffer before cutting the reader.
 const DRAIN_GRACE_MS = 200;
 
 /**
- * Đọc stream tới khi hết HOẶC tới khi `stop` resolve thì hủy (lấy phần đã có).
- * Cần thiết vì process con orphan (vd dev server fork) có thể giữ pipe mở sau khi
- * process chính bị kill → `new Response(stream).text()` sẽ treo vô hạn.
+ * Read the stream to the end OR cancel when `stop` resolves (taking whatever arrived).
+ * Necessary because an orphaned child (e.g. a forked dev server) can hold the pipe open after the
+ * main process is killed → `new Response(stream).text()` would hang forever.
  */
 async function drain(stream: ReadableStream<Uint8Array> | null, stop: Promise<void>): Promise<string> {
   if (!stream) return "";
@@ -28,15 +28,15 @@ async function drain(stream: ReadableStream<Uint8Array> | null, stop: Promise<vo
       if (value) chunks.push(value);
     }
   } catch {
-    // reader bị cancel → trả phần đã đọc
+    // the reader was cancelled → return what was read
   }
   return Buffer.concat(chunks).toString("utf8");
 }
 
 /**
- * Chạy lệnh bằng Bun.spawn (KHÔNG qua shell → không injection từ phía kt).
- * - try/catch: argv[0] không phải executable (vd env-prefix `FOO=1 cmd`) → trả exitCode 127 thay vì throw.
- * - timeout: lệnh long-running (dev server, --watch) bị kill thay vì treo vô hạn; output đã có vẫn giữ.
+ * Run the command with Bun.spawn (NOT through a shell → no injection from kt's side).
+ * - try/catch: argv[0] isn't an executable (e.g. the env prefix `FOO=1 cmd`) → return exitCode 127 rather than throwing.
+ * - timeout: long-running commands (dev server, --watch) get killed instead of hanging forever; output so far is kept.
  */
 export async function run(argv: string[], timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<RunResult> {
   const start = performance.now();
@@ -52,7 +52,7 @@ export async function run(argv: string[], timeoutMs: number = DEFAULT_TIMEOUT_MS
   } catch (e: any) {
     return {
       stdout: "",
-      stderr: `kt: không chạy được lệnh \`${argv.join(" ")}\`: ${e?.message ?? e}`,
+      stderr: `kt: could not run \`${argv.join(" ")}\`: ${e?.message ?? e}`,
       exitCode: 127,
       durationMs: performance.now() - start,
       spawnError: String(e?.code ?? e?.message ?? e),

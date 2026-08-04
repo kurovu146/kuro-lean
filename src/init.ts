@@ -2,13 +2,13 @@ import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, statS
 import { homedir } from "os";
 import { join, dirname, basename } from "path";
 
-// Khớp cả lời gọi trực tiếp (`kt status`, `/path/to/kt status`) lẫn qua biến (`"$KT" status`).
+// Matches both direct invocation (`kt status`, `/path/to/kt status`) and via a variable (`"$KT" status`).
 const KT_STATUS_RE = /(kt|\$\{?KT\}?)["']?\s+status\b/;
 
 /**
- * statusLine có dùng kt không? Nhiều user wrap `kt status` trong script riêng
- * (vd `bash ~/.claude/scripts/statusline.sh` nối thêm usage) → đọc nội dung
- * file được tham chiếu trong command thay vì chỉ so chuỗi settings.json.
+ * Does the statusLine use kt? Many users wrap `kt status` in their own script
+ * (e.g. `bash ~/.claude/scripts/statusline.sh` appending usage) -> read the contents of the
+ * referenced file rather than only string-matching settings.json.
  */
 function statusLineUsesKt(command: string, home: string): boolean {
   if (KT_STATUS_RE.test(command)) return true;
@@ -18,7 +18,7 @@ function statusLineUsesKt(command: string, home: string): boolean {
     try {
       if (existsSync(p) && statSync(p).isFile() && KT_STATUS_RE.test(readFileSync(p, "utf8"))) return true;
     } catch {
-      // không đọc được → coi như không phải wrapper
+      // unreadable -> treat it as not a wrapper
     }
   }
   return false;
@@ -27,7 +27,7 @@ function statusLineUsesKt(command: string, home: string): boolean {
 interface HookEntry { type: "command"; command: string }
 interface Matcher { matcher: string; hooks: HookEntry[] }
 
-/** Đảm bảo matcher tồn tại và chứa đủ các command (idempotent, không tạo block trùng). */
+/** Ensure the matcher exists and holds every command (idempotent, never creates a duplicate block). */
 function ensureMatcher(list: Matcher[], matcher: string, cmds: string[]): void {
   let block = list.find((m) => m.matcher === matcher);
   if (!block) {
@@ -43,8 +43,8 @@ function ensureMatcher(list: Matcher[], matcher: string, cmds: string[]): void {
 }
 
 /**
- * Như ensureMatcher nhưng cho event KHÔNG theo tool (UserPromptSubmit, SessionEnd...):
- * những event này không có matcher, gắn vào chỉ tổ gây hiểu nhầm.
+ * Like ensureMatcher but for events NOT tied to a tool (UserPromptSubmit, SessionEnd...):
+ * these events have no matcher, and attaching one only causes confusion.
  */
 function ensureHook(list: { hooks: HookEntry[] }[], cmd: string): void {
   if (list.some((b) => b.hooks?.some((h) => h.command === cmd))) return;
@@ -59,7 +59,7 @@ function parseSettings(settingsPath: string): any {
   try {
     return JSON.parse(raw);
   } catch {
-    throw new Error(`${settingsPath} không phải JSON hợp lệ — sửa tay rồi chạy lại (không đụng để khỏi mất dữ liệu).`);
+    throw new Error(`${settingsPath} is not valid JSON - fix it by hand and re-run (left untouched so nothing is lost).`);
   }
 }
 
@@ -68,26 +68,26 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
 
   const before = JSON.stringify(settings);
 
-  // statusLine: chỉ set khi user CHƯA có statusLine nào.
-  // KHÔNG ghi đè statusLine custom của user (vd statusline.cjs riêng).
+  // statusLine: only set when the user has NO statusLine yet.
+  // NEVER overwrite a custom statusLine (e.g. their own statusline.cjs).
   const wantStatus = `${ktBin} status`;
   if (!settings.statusLine) {
     settings.statusLine = { type: "command", command: wantStatus, padding: 2 };
   }
 
-  // hooks.PreToolUse: Bash (guard trước, compress sau) + Read (guard chặn file nhiễu)
+  // hooks.PreToolUse: Bash (guard first, compress after) + Read (the guard blocks noisy files)
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
   ensureMatcher(settings.hooks.PreToolUse, "Bash", [`${ktBin} hook-guard`, `${ktBin} hook-compress`]);
   ensureMatcher(settings.hooks.PreToolUse, "Read", [`${ktBin} hook-guard`]);
 
-  // hooks.UserPromptSubmit: chặn lượt đầu tiên sau khi cache chết. Phải là hook TRƯỚC-khi-gửi;
-  // statusline vẽ lại sau khi request đã đi nên chỉ kịp báo hoá đơn, không kịp cản.
+  // hooks.UserPromptSubmit: block the first turn after the cache dies. It must be a BEFORE-send hook;
+  // the status line redraws after the request has left, so it can only show the bill, never prevent it.
   settings.hooks.UserPromptSubmit ??= [];
   ensureHook(settings.hooks.UserPromptSubmit, `${ktBin} hook-prompt`);
 
-  // permissions.allow: lệnh sau rewrite là `kt run -- ...` nên allowlist cũ (vd Bash(bun test:*))
-  // không khớp nữa → tự thêm để user khỏi bị prompt lại sau mỗi lần wrap.
+  // permissions.allow: after rewriting, the command is `kt run -- ...`, so an old allowlist entry
+  // no longer matches -> add it automatically so the user is not re-prompted after every wrap.
   settings.permissions ??= {};
   settings.permissions.allow ??= [];
   const perm = `Bash(${ktBin} run:*)`;
@@ -106,9 +106,9 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
 }
 
 /**
- * Cài 1 skill từ file nguồn `skills/<name>.md` vào skills dir của Claude Code
- * (target: <skillsDir>/<name>/SKILL.md — tên suy từ tên file nguồn).
- * KHÔNG ghi đè nếu user đã có skill cùng tên (kể cả bản custom) — giống chính sách statusLine.
+ * Install one skill from the source file `skills/<name>.md` into the Claude Code skills directory
+ * (target: <skillsDir>/<name>/SKILL.md - the name is derived from the source filename).
+ * NEVER overwrite a skill the user already has (custom or not) - the same policy as statusLine.
  */
 export function installSkill(skillsDir: string, sourcePath: string): { changed: boolean } {
   const target = join(skillsDir, basename(sourcePath, ".md"), "SKILL.md");
@@ -121,13 +121,13 @@ export function installSkill(skillsDir: string, sourcePath: string): { changed: 
 export function runDoctor(home: string = homedir()): string {
   const settingsPath = join(home, ".claude", "settings.json");
   const lines: string[] = [];
-  lines.push(`settings: ${existsSync(settingsPath) ? "✓ " + settingsPath : "✗ chưa có"}`);
+  lines.push(`settings: ${existsSync(settingsPath) ? "✓ " + settingsPath : "✗ not found"}`);
   if (existsSync(settingsPath)) {
     let cfg: any;
     try {
       cfg = JSON.parse(readFileSync(settingsPath, "utf8") || "{}");
     } catch {
-      lines.push("⚠ settings.json không phải JSON hợp lệ — kiểm tra lại");
+      lines.push("⚠ settings.json is not valid JSON — check it");
       return lines.join("\n") + "\n";
     }
     const hasStatus = statusLineUsesKt(String(cfg.statusLine?.command ?? ""), home);
@@ -142,7 +142,7 @@ export function runDoctor(home: string = homedir()): string {
   }
   for (const name of ["concise-output", "lean-code"]) {
     const skillPath = join(home, ".claude", "skills", name, "SKILL.md");
-    lines.push(`skill ${name}: ${existsSync(skillPath) ? "✓" : "✗ (chạy kt init)"}`);
+    lines.push(`skill ${name}: ${existsSync(skillPath) ? "✓" : "✗ (run kt init)"}`);
   }
   lines.push(`bun: ${Bun.version}`);
   return lines.join("\n") + "\n";

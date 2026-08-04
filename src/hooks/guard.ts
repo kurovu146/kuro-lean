@@ -8,7 +8,7 @@ interface Rule {
   reason: string;
 }
 
-// Read kèm offset/limit nhỏ hơn ngưỡng này = agent cố ý đọc 1 đoạn → cho qua.
+// A Read with an offset/limit below this threshold = the agent deliberately reading one slice → allow it.
 const INTENTIONAL_READ_LIMIT = 400;
 
 const NOISE_NAMES = new Set([
@@ -19,9 +19,9 @@ const NOISE_EXT_RE = /\.min\.(js|css)$|\.map$/;
 const NOISE_DIR_RE = /(^|\/)(node_modules|dist|build|\.next|out|vendor|coverage)\//;
 
 /**
- * Chặn `Read` cả file nhiễu (lock/generated/minified/vendor hoặc > maxReadKb) vì tốn token,
- * ít tín hiệu để hiểu code. Cho qua nếu agent đọc có chủ đích (offset/limit nhỏ).
- * Trả lý do nếu nên chặn, ngược lại null.
+ * Block `Read` on whole noisy files (lock/generated/minified/vendor, or > maxReadKb): expensive in
+ * tokens, little signal for understanding the code. Allowed when the agent reads deliberately (a small
+ * offset/limit). Returns a reason when it should be blocked, otherwise null.
  */
 export function checkNoisyRead(
   input: { file_path?: string; offset?: number; limit?: number },
@@ -31,7 +31,7 @@ export function checkNoisyRead(
   const fp = input.file_path;
   if (!fp) return null;
 
-  // cửa thoát: đọc đoạn có chủ đích
+  // the escape hatch: a deliberate slice read
   if (input.offset != null) return null;
   if (input.limit != null && input.limit <= INTENTIONAL_READ_LIMIT) return null;
 
@@ -39,23 +39,23 @@ export function checkNoisyRead(
   let why: string | null = null;
   if (NOISE_NAMES.has(base)) why = "lock file";
   else if (NOISE_EXT_RE.test(fp)) why = "file generated/minified";
-  else if (NOISE_DIR_RE.test(fp)) why = "file trong thư mục vendor/build";
+  else if (NOISE_DIR_RE.test(fp)) why = "a file inside a vendor/build directory";
   else if (existsSync(fp)) {
     try {
       const size = statSync(fp).size;
       if (size > cfg.maxReadKb * 1024) why = `file lớn ${Math.round(size / 1024)}KB (> ${cfg.maxReadKb}KB)`;
     } catch {
-      // không stat được → bỏ qua
+      // couldn't stat it → skip
     }
   }
   if (!why) return null;
-  return `\`Read ${base}\` là ${why} → tốn token, ít tín hiệu. Cần 1 đoạn cụ thể? Read kèm limit nhỏ (vd limit:200) hoặc dùng Grep tìm đúng dòng. Tắt tạm: KT_DISABLE=1.`;
+  return `\`Read ${base}\` is ${why} → expensive in tokens, little signal. Need one specific slice? Read with a small limit (e.g. limit:200), or use Grep to find the exact line. Temporarily disable: KT_DISABLE=1.`;
 }
 
 /**
- * Chặn `cat <file-lớn>` vì nó đổ nguyên file vào context.
- * Chỉ áp cho `cat` — head/tail vốn tự giới hạn dòng nên không cần chặn.
- * Trả lý do nếu có file > maxCatKb, ngược lại null.
+ * Block `cat <big-file>`, because it dumps the whole file into the context.
+ * Only applies to `cat` — head/tail already limit their line count, so they need no block.
+ * Returns a reason when a file exceeds maxCatKb, otherwise null.
  */
 function checkCatBig(command: string, maxCatKb: number): string | null {
   const tokens = command.trim().split(/\s+/);
@@ -63,16 +63,16 @@ function checkCatBig(command: string, maxCatKb: number): string | null {
   if (bin !== "cat") return null;
   const limit = maxCatKb * 1024;
   for (const tok of tokens.slice(1)) {
-    if (tok.startsWith("-")) continue; // bỏ flag
+    if (tok.startsWith("-")) continue; // skip flags
     if (!existsSync(tok)) continue;
     try {
       const { size } = statSync(tok);
       if (size > limit) {
         const kb = Math.round(size / 1024);
-        return `\`cat ${tok}\` đổ cả file ${kb}KB (> ${maxCatKb}KB) vào context → ngốn token. Dùng sed -n '1,200p' ${tok}, rg, hoặc đọc range thay vì cat.`;
+        return `\`cat ${tok}\` dumps the whole ${kb}KB file (> ${maxCatKb}KB) into the context → token-hungry. Use sed -n '1,200p' ${tok}, rg, or read a range instead of cat.`;
       }
     } catch {
-      // không stat được → bỏ qua
+      // couldn't stat it → skip
     }
   }
   return null;
@@ -82,26 +82,26 @@ const RULES: Rule[] = [
   {
     key: "findRoot",
     test: (c) => /\bfind\s+\/(\s|$)/.test(c),
-    reason: "`find /` quét toàn ổ đĩa → cực ngốn token. Hãy scope: find ./thư-mục ...",
+    reason: "`find /` scans the entire disk → extremely token-hungry. Scope it: find ./directory ...",
   },
   {
     key: "npmLs",
     test: (c) => /\bnpm ls\b/.test(c) && !/--depth/.test(c),
-    reason: "`npm ls` in cả cây phụ thuộc. Thêm --depth=0 cho gọn.",
+    reason: "`npm ls` prints the whole dependency tree. Add --depth=0 to keep it short.",
   },
   {
     key: "gitLogP",
-    // `git log` phải ở vị trí LỆNH (đầu câu hoặc sau | ; &) — tránh false-positive khi
-    // "git log -p" nằm trong chuỗi, vd commit message nói về chính rule này.
+    // `git log` must be in COMMAND position (line start, or after | ; &) — avoids a false positive when
+    // "git log -p" sits inside a string, e.g. a commit message describing this very rule.
     test: (c) => /(?:^|[|;&])\s*git\s+log\b/.test(c) && /(^|\s)(-p|--patch)(\s|$)/.test(c),
-    reason: "`git log -p` đổ full patch của mọi commit → ngốn token. Dùng git log --oneline rồi git show <sha> -- <file> khi cần đọc 1 thay đổi.",
+    reason: "`git log -p` dumps the full patch of every commit → token-hungry. Use git log --oneline, then git show <sha> -- <file> when you need to read one change.",
   },
   {
     key: "treeNoDepth",
-    // chỉ khớp khi `tree` là LỆNH (đầu câu hoặc sau | ; &) — tránh false-positive
-    // khi "tree" là đối số/chuỗi tìm kiếm, vd: grep "tree" src/
+    // only match when `tree` is the COMMAND (line start, or after | ; &) — avoids a false positive
+    // when "tree" is an argument or search string, e.g. grep "tree" src/
     test: (c) => /(?:^|[|;&])\s*tree\b/.test(c) && !/-L\s*\d/.test(c),
-    reason: "`tree` không giới hạn độ sâu. Thêm -L 2.",
+    reason: "`tree` has no depth limit. Add -L 2.",
   },
 ];
 

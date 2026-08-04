@@ -6,9 +6,9 @@ import { CACHE_READ_MULT, CACHE_WRITE_MULT, priceOf, type Price, type PricingTab
 import { fmtIdle } from "../statusline";
 
 /**
- * Cảnh báo TRƯỚC khi request rời máy. Statusline chỉ vẽ lại SAU khi đã gửi, nên nó là
- * hoá đơn chứ không phải cảnh báo — lúc nhìn thấy "cache chết" thì tiền đã trả rồi.
- * UserPromptSubmit chạy trước, và `decision: "block"` huỷ luôn lượt đó => không tốn gì.
+ * Warn BEFORE the request leaves the machine. The status line only redraws AFTER the turn was sent,
+ * so it is a receipt rather than a warning — by the time you see "cache dead" you have already paid.
+ * UserPromptSubmit runs first, and `decision: "block"` cancels that turn outright => it costs nothing.
  */
 
 export interface PromptFacts {
@@ -20,30 +20,30 @@ export interface PromptFacts {
 
 export interface PromptGuardConfig {
   idleMin: number;
-  /** Dưới ngưỡng này nạp lại chỉ vài xu — chặn chỉ tổ phiền, không đáng. */
+  /** Below this, a reload is worth pennies — blocking would only be annoying. */
   minTokens: number;
 }
 
-/** Có nên chặn lượt này không (PURE). null = cho đi bình thường. */
+/** Should this turn be blocked (PURE). null = let it through. */
 export function decidePromptGuard(f: PromptFacts, cfg: PromptGuardConfig): { reason: string } | null {
-  if (cfg.idleMin <= 0) return null; // tắt
-  if (f.idleMinutes < cfg.idleMin) return null; // cache còn sống, gửi đi còn được gia hạn TTL
-  if (f.alreadyWarned) return null; // đã cảnh báo cho đúng lần chết này → đừng chặn vòng lặp
+  if (cfg.idleMin <= 0) return null; // disabled
+  if (f.idleMinutes < cfg.idleMin) return null; // cache still alive, and sending extends its TTL
+  if (f.alreadyWarned) return null; // already warned for this particular expiry → don't loop
   if (f.tokens < cfg.minTokens) return null;
 
-  const tok = `${Math.round(f.tokens / 1000)}k token`;
+  const tok = `${Math.round(f.tokens / 1000)}k tokens`;
   const money = f.price
-    ? ` ở giá cache write (${CACHE_WRITE_MULT}× input) ≈ $${((f.tokens / 1e6) * f.price.input * CACHE_WRITE_MULT).toFixed(2)}` +
-      `, và mỗi lượt sau đó ~$${((f.tokens / 1e6) * f.price.input * CACHE_READ_MULT).toFixed(2)} tiền đọc lại`
+    ? ` at the cache-write rate (${CACHE_WRITE_MULT}× input) ≈ $${((f.tokens / 1e6) * f.price.input * CACHE_WRITE_MULT).toFixed(2)}` +
+      `, plus ~$${((f.tokens / 1e6) * f.price.input * CACHE_READ_MULT).toFixed(2)} per turn after that to re-read it`
     : "";
 
   return {
     reason:
-      `❄️ Cache context đã hết hạn — phiên im ${fmtIdle(f.idleMinutes)} (TTL ${cfg.idleMin} phút).\n` +
-      `Gửi lượt này sẽ nạp lại toàn bộ ~${tok}${money}.\n\n` +
-      `kt chặn ĐÚNG 1 LẦN để bạn chọn:\n` +
-      `  • Vẫn tiếp phiên này → bấm ↑ rồi Enter (prompt còn trong lịch sử). Lượt sau không bị chặn nữa.\n` +
-      `  • Rẻ hơn nhiều → /clear, rồi chạy \`kt handoff --recover\` và dán kết quả: mang lại phần việc đang dở với vài nghìn token.`,
+      `❄️ The context cache has expired — this session has been idle ${fmtIdle(f.idleMinutes)} (TTL ${cfg.idleMin} min).\n` +
+      `Sending this turn reloads all ~${tok}${money}.\n\n` +
+      `kt blocks EXACTLY ONCE so you can choose:\n` +
+      `  • Continue this session → press ↑ then Enter (your prompt is still in the history). The next turn won't be blocked.\n` +
+      `  • Much cheaper → /clear, then run \`kt handoff --recover\` and paste the result: it carries the work in progress over in a few thousand tokens.`,
   };
 }
 
@@ -55,8 +55,8 @@ export interface LastContext {
 }
 
 /**
- * Usage của lượt CUỐI trong transcript = kích thước context đang phải nạp lại.
- * Cộng dồn cả phiên là sai: mỗi lượt đọc lại cùng một context, không phải context mới.
+ * The usage of the LAST turn in the transcript = the size of the context being reloaded.
+ * Summing the whole session is wrong: every turn re-reads the same context, it isn't new context.
  */
 export function lastContext(transcriptPath: string): LastContext {
   let text: string;
@@ -89,7 +89,7 @@ export function lastContextTokens(transcriptPath: string): number {
   return lastContext(transcriptPath).tokens;
 }
 
-/** Marker neo theo mtime: cùng một lần cache chết thì chỉ chặn một lần. */
+/** A marker anchored to mtime: one expiry gets blocked exactly once. */
 export function markerPath(transcriptPath: string): string {
   const key = createHash("md5").update(transcriptPath).digest("hex").slice(0, 8);
   return join(tmpdir(), `kt-idle-${key}.json`);
@@ -115,8 +115,8 @@ export interface PromptHookInput {
 }
 
 /**
- * Cả hook: trả chuỗi JSON cho stdout, hoặc null nếu không can thiệp.
- * Transcript chỉ bị đọc khi mtime đã vượt ngưỡng — lượt bình thường chỉ tốn 1 lần stat().
+ * The whole hook: returns a JSON string for stdout, or null to stay out of the way.
+ * The transcript is only read once mtime passes the threshold — a normal turn costs one stat().
  */
 export function promptGuardOutput(
   input: PromptHookInput,
@@ -126,10 +126,10 @@ export function promptGuardOutput(
   const { idleMin, minTokens } = cfg.promptGuard ?? { idleMin: 0, minTokens: 0 };
   if (idleMin <= 0) return null;
 
-  // CHỈ transcript của chính phiên này. Không có file (lượt đầu của phiên mới — Claude Code
-  // ghi transcript sau khi lượt bắt đầu) nghĩa là context còn rỗng: không có gì để nạp lại.
-  // Từng fallback sang phiên gần nhất của project, và nó chặn oan mọi panel mới mở cạnh một
-  // phiên bỏ dở — lấy số liệu của người khác gán cho phiên này.
+  // ONLY the transcript of this very session. No file (the first turn of a new session — Claude Code
+  // writes the transcript after the turn starts) means the context is still empty: nothing to reload.
+  // This used to fall back to the project's most recent session, which unfairly blocked every panel
+  // opened next to an abandoned one — taking someone else's numbers and pinning them on this session.
   const path = input.transcript_path;
   if (!path || !existsSync(path)) return null;
 
@@ -140,7 +140,7 @@ export function promptGuardOutput(
     return null;
   }
   const idleMinutes = Math.max(0, (now - mtime) / 60_000);
-  if (idleMinutes < idleMin) return null; // đường thường thoát ở đây, chưa đọc byte nào
+  if (idleMinutes < idleMin) return null; // the normal path exits here, without reading a byte
 
   const state = markerPath(path);
   const { tokens, model } = lastContext(path);
@@ -158,4 +158,3 @@ export function promptGuardOutput(
   markWarned(state, mtime);
   return JSON.stringify({ decision: "block", reason: decision.reason });
 }
-

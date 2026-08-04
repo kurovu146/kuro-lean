@@ -9,7 +9,7 @@ export interface RunMetrics {
   costUsd: number;
   durationMs: number;
   numTurns: number;
-  contextTokens: number; // input + cache_read + cache_creation = tổng token đi vào model
+  contextTokens: number; // input + cache_read + cache_creation = total tokens entering the model
   outputTokens: number;
 }
 
@@ -39,7 +39,7 @@ export function parseClaudeJson(stdout: string): RunMetrics | null {
   try {
     obj = JSON.parse(stdout);
   } catch {
-    // stdout có thể lẫn dòng khác → lấy dòng JSON parse được cuối cùng
+    // stdout may carry other lines -> take the last line that parses as JSON
     const lines = stdout.trim().split("\n");
     for (let i = lines.length - 1; i >= 0; i--) {
       try { obj = JSON.parse(lines[i]!); break; } catch {}
@@ -47,7 +47,7 @@ export function parseClaudeJson(stdout: string): RunMetrics | null {
   }
   if (!obj || obj.type !== "result" || obj.is_error) return null;
   const n = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
-  // modelUsage là số cộng dồn per-model → đáng tin hơn usage (có thể chỉ là lượt cuối)
+  // modelUsage is a per-model running total -> more trustworthy than usage (which may be the last turn only)
   let input = 0, output = 0, cacheRead = 0, cacheCreate = 0;
   const mu = obj.modelUsage;
   if (mu && typeof mu === "object" && Object.keys(mu).length > 0) {
@@ -111,15 +111,15 @@ export function formatReport(base: ArmSummary, kt: ArmSummary): string {
     row("Turns", base.numTurns, kt.numTurns, num),
     row("Duration", base.durationMs, kt.durationMs, sec),
     "",
-    "(Δ = kt so với baseline; dương = kt tốn hơn)",
-    `runs hợp lệ (test xanh sau phiên): baseline ${base.valid}/${base.total}, kt ${kt.valid}/${kt.total}`,
+    "(delta = kt versus baseline; positive = kt costs more)",
+    `valid runs (tests green after the session): baseline ${base.valid}/${base.total}, kt ${kt.valid}/${kt.total}`,
   ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// Fixture: mini project Bun có bug thật (median quên sort) — 3 test fail, 47 test pass
-// làm nhiễu output đủ lớn để kt có đất nén. Sinh lúc chạy (không để file *.test.ts
-// trong repo kẻo bun test của kuro-lean quét nhầm).
+// Fixture: a mini Bun project with a real bug (median forgets to sort) - 3 tests fail, 47 pass,
+// making the output noisy enough for kt to have something to compress. Generated at runtime (no
+// *.test.ts files left in the repo, or this project's own suite would pick them up).
 // ---------------------------------------------------------------------------
 
 const FIXTURE_STATS_SRC = `export function sum(xs: number[]): number {
@@ -225,7 +225,7 @@ export function prepareWorkspace(dir: string, arm: Arm): void {
 }
 
 export function armEnv(arm: Arm, base: Record<string, string | undefined>): Record<string, string | undefined> {
-  // baseline phải trung hoà cả hook GLOBAL của máy đã `kt init` → dùng kill-switch KT_DISABLE
+  // the baseline must also neutralise a GLOBAL hook on a machine that ran `kt init` -> use the kill switch
   return arm === "baseline" ? { ...base, KT_DISABLE: "1" } : { ...base, KT_DISABLE: undefined };
 }
 
@@ -258,7 +258,7 @@ export type SpawnFn = (
 
 export const realSpawn: SpawnFn = async (argv, opts) => {
   const proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env as Record<string, string>, stdout: "pipe", stderr: "pipe" });
-  // đọc cả stderr để tránh nghẽn pipe khi output dài
+  // read stderr too, to avoid a blocked pipe when the output is long
   const [stdout] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { stdout, exitCode: await proc.exited };
 };
@@ -281,15 +281,15 @@ export async function runBench(
         const res = await spawn(buildClaudeArgs(opts.model, opts.maxTurns), { cwd: ws, env: armEnv(arm, process.env) });
         const m = res.exitCode === 0 ? parseClaudeJson(res.stdout) : null;
         metrics.push(m);
-        // gate: phiên chỉ hợp lệ khi fixture xanh sau phiên (tránh so token của phiên bỏ dở)
+        // gate: a session counts only when the fixture is green afterwards (never compare tokens of an abandoned session)
         const gate = await spawn(["bun", "test"], { cwd: ws, env: { ...process.env } });
         passed.push(gate.exitCode === 0);
-        log(`  metrics ${m ? "✓" : "✗"} · test sau phiên: ${gate.exitCode === 0 ? "xanh" : "đỏ"}`);
+        log(`  metrics ${m ? "✓" : "✗"} · tests after the session: ${gate.exitCode === 0 ? "green" : "red"}`);
       }
       summaries.push(summarize(arm, metrics, passed));
     }
   } finally {
-    // spawn ném lỗi giữa chừng vẫn phải dọn tmp (trừ khi --keep)
+    // a spawn throwing midway must still clean up tmp (unless --keep)
     if (!opts.keep) rmSync(root, { recursive: true, force: true });
   }
   const report = formatReport(summaries[0]!, summaries[1]!);

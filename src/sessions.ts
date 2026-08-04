@@ -5,11 +5,12 @@ import { CACHE_WRITE_MULT, priceOf, type PricingTable } from "./cost";
 import { fmtIdle } from "./statusline";
 
 /**
- * Tra phiên bỏ dở trên TOÀN MÁY. `kt handoff --recover` bám theo cwd, nên chỉ dùng được khi
- * đã biết phiên nằm ở repo nào — mà quên handoff thì thường quên luôn cả điều đó.
+ * Find abandoned sessions across the WHOLE MACHINE. `kt handoff --recover` follows cwd, so it only
+ * helps when you already know which repo the session was in — and forgetting to run handoff usually
+ * means forgetting that too.
  *
- * 1.901 transcript / 900MB trên máy thật: không được đọc cả file. stat() lọc trước, chỉ đọc
- * vài KB đầu (cwd/branch) và cuối (usage) của số ít file lọt vào danh sách.
+ * 1,901 transcripts / 900MB on a real machine: never read whole files. stat() filters first, and only
+ * the few files that make the list get a few KB read from the head (cwd/branch) and tail (usage).
  */
 
 const HEAD_BYTES = 16_000;
@@ -26,13 +27,13 @@ export interface SessionRow {
 }
 
 export interface ListOptions {
-  /** Dưới ngưỡng này coi như phiên chưa có gì để cứu. */
+  /** Below this, treat the session as having nothing worth rescuing. */
   minBytes: number;
   limit: number;
   now?: number;
 }
 
-/** Đọc một lát byte ở đầu hoặc cuối file, không nạp cả file vào RAM. */
+/** Read a slice of bytes from the head or tail of a file, without loading it all into RAM. */
 function readSlice(path: string, bytes: number, from: "head" | "tail"): string {
   let fd: number | null = null;
   try {
@@ -50,7 +51,7 @@ function readSlice(path: string, bytes: number, from: "head" | "tail"): string {
   }
 }
 
-/** cwd/gitBranch nằm rải trong transcript; lấy lần xuất hiện đầu tiên ở đầu file. */
+/** cwd/gitBranch appear scattered through the transcript; take the first occurrence near the head. */
 export function readMeta(path: string): { cwd: string; branch: string } {
   const head = readSlice(path, HEAD_BYTES, "head");
   return {
@@ -59,7 +60,7 @@ export function readMeta(path: string): { cwd: string; branch: string } {
   };
 }
 
-/** Usage của lượt CUỐI = kích thước context phải nạp lại. Đọc ngược từ đuôi file. */
+/** The LAST turn's usage = the context size that must be reloaded. Read backwards from the tail. */
 export function readLastUsage(path: string): { tokens: number; model: string } {
   const lines = readSlice(path, TAIL_BYTES, "tail").split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -69,7 +70,7 @@ export function readLastUsage(path: string): { tokens: number; model: string } {
     try {
       e = JSON.parse(line);
     } catch {
-      continue; // lát cắt có thể chặt giữa dòng đầu tiên — bỏ qua là đúng
+      continue; // the slice may cut the first line in half — skipping it is correct
     }
     const u = e?.message?.usage;
     if (!u || typeof u !== "object") continue;
@@ -127,15 +128,15 @@ export function listSessions(root: string, opts: ListOptions): SessionRow[] {
   });
 }
 
-/** Bảng để mắt người quét nhanh: cột nào đắt nhất, phiên nào đáng cứu. */
+/** A table for a human to scan: which column costs the most, which session is worth rescuing. */
 export function renderSessions(rows: SessionRow[], pricing: PricingTable, home: string = homedir()): string {
-  if (!rows.length) return "Không tìm thấy phiên nào đáng cứu.\n";
-  const out = ["  #  im        context     nạp lại   phiên"];
+  if (!rows.length) return "No sessions worth rescuing were found.\n";
+  const out = ["  #  idle      context     reload    session"];
   rows.forEach((r, i) => {
     const price = r.model ? priceOf(r.model, pricing) : null;
     const money = price ? `$${((r.tokens / 1e6) * price.input * CACHE_WRITE_MULT).toFixed(2)}` : "—";
     const where = r.cwd ? (r.cwd.startsWith(home) ? "~" + r.cwd.slice(home.length) : r.cwd) : r.path;
-    // tokens 0 = không thấy usage ở đuôi file, KHÁC với "phiên rỗng" — đừng hiện 0k rồi bị bỏ qua
+    // tokens 0 = no usage found in the tail, which is NOT "an empty session" — don't print 0k and get skipped
     const ctx = r.tokens ? `${Math.round(r.tokens / 1000)}k tok` : "? tok";
     out.push(
       `  ${String(i + 1).padEnd(2)} ${fmtIdle(r.idleMinutes).padEnd(9)} ` +
@@ -146,7 +147,7 @@ export function renderSessions(rows: SessionRow[], pricing: PricingTable, home: 
   return out.join("\n") + "\n";
 }
 
-/** `--from`: số thứ tự trong bảng, hoặc thẳng đường dẫn. null = không hiểu → đừng đoán. */
+/** `--from`: a row number from the table, or a path outright. null = not understood → don't guess. */
 export function resolveFrom(rows: SessionRow[], arg: string): string | null {
   const s = arg.trim();
   if (/^\d+$/.test(s)) {
@@ -161,23 +162,23 @@ export type HandoffArgs =
   | { mode: "list"; limit: number }
   | { mode: "recover"; n: number; from: string | null; copy: boolean };
 
-/** Đọc cờ của `kt handoff`. Tách rời khỏi I/O để test được mà không cần dựng CLI. */
+/** Parse the flags of `kt handoff`. Kept away from I/O so it's testable without building a CLI. */
 export function parseHandoffArgs(rest: string[]): HandoffArgs {
   const copy = rest.includes("--copy");
-  const args = rest.filter((a) => a !== "--copy"); // lọc trước, kẻo thành tên file
+  const args = rest.filter((a) => a !== "--copy"); // filter first, or it becomes the filename
   if (args[0] === "--list") return { mode: "list", limit: Number(args[1]) || 10 };
   if (args[0] === "--recover") {
     const tail = args.slice(1);
     const i = tail.indexOf("--from");
     const from = i >= 0 ? tail[i + 1] ?? null : null;
-    // Bỏ cả cặp `--from X` rồi mới tìm N, kẻo `--from 2` bị đọc thành "2 message cuối".
+    // Drop the whole `--from X` pair before looking for N, or `--from 2` reads as "the last 2 messages".
     const nums = tail.filter((_, k) => i < 0 || (k !== i && k !== i + 1)).filter((a) => /^\d+$/.test(a));
     return { mode: "recover", n: Number(nums[0]) || 60, from, copy };
   }
   return { mode: "prompt", file: args[0] || ".kt/handoff.md", copy };
 }
 
-/** Lệnh clipboard theo hệ điều hành. null = không biết → nói thẳng, đừng nuốt im lặng. */
+/** The clipboard command per platform. null = unknown → say so, don't swallow it silently. */
 export function clipboardCommand(platform: string): { cmd: string; args: string[] } | null {
   if (platform === "darwin") return { cmd: "pbcopy", args: [] };
   if (platform === "win32") return { cmd: "clip", args: [] };

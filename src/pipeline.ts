@@ -16,10 +16,10 @@ export async function runAndCompress(
   const input = { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, command };
   const full = joinOutput(input);
   const header = res.timedOut
-    ? `⏱️ lệnh bị kill sau timeout (output có thể chưa đầy đủ — chạy raw nếu cần theo dõi liên tục)\n`
+    ? `⏱️ command killed after the timeout (output may be incomplete — run it raw if you need to watch it live)\n`
     : "";
-  // Pass-through output nhỏ: trả nguyên văn, không lưu store/meta — model thấy output
-  // quen thuộc nên không tốn turn xác minh; kt chỉ nén khi phần tiết kiệm đáng kể.
+  // Pass small output straight through: verbatim, no store/meta — the model sees familiar output and
+  // spends no turn verifying it; kt only compresses where the saving is real.
   if (full.length < config.run.rawUnderChars) {
     return { compact: header + full, exitCode: res.exitCode };
   }
@@ -34,9 +34,9 @@ export async function runAndCompress(
       { root: storeRoot },
     );
   } catch {
-    // ghi full/meta thất bại: vẫn in compact
+    // writing full/meta failed: still print the compact form
   }
   const saved = countLines(full) - result.compactLines;
-  const footer = saved > 0 ? `\n↳ ${saved} dòng đã nén · full: kt show ${id}` : "";
+  const footer = saved > 0 ? `\n↳ ${saved} lines compressed · full: kt show ${id}` : "";
   return { compact: header + result.text + footer, exitCode: res.exitCode };
 }

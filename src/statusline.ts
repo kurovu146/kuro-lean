@@ -39,29 +39,30 @@ export interface Extras {
   git: GitInfo | null;
   tools: number;
   todos: { done: number; total: number } | null;
-  quota: string | null; // đã format sẵn (vd "⏳ 3h 12m left (40% used)")
+  quota: string | null; // pre-formatted (e.g. "⏳ 3h 12m left (40% used)")
   plan: string | null;
-  cost?: number | null; // cost của riêng phiên hiện tại (reset khi /clear); undefined => fallback input.cost
-  savedTokens?: number | null; // token kt đã tiết kiệm (từ .kt/runs/index.jsonl); null/0 => ẩn
-  // USD phải trả để đọc lại context cho MỖI lượt kế tiếp (cache read). Context phình =>
-  // mỗi lần gõ Enter đắt thêm, kể cả khi không nạp gì mới. null/0 => ẩn.
+  cost?: number | null; // cost of the current session only (resets on /clear); undefined => fall back to input.cost
+  savedTokens?: number | null; // tokens kt has saved (from .kt/runs/index.jsonl); null/0 => hidden
+  // USD to re-read the context on EVERY following turn (cache read). A growing context means
+  // every Enter costs more, even when nothing new is loaded. null/0 => hidden.
   perTurn?: number | null;
-  // Im lặng bao lâu kể từ lần ghi transcript cuối. Quá TTL 1h thì cache chết và lượt tới
-  // phải nạp lại toàn bộ context (2× giá input) — đó là lúc `/clear` đáng giá nhất.
+  // How long it has been silent since the transcript was last written. Past the 1h TTL the cache is
+  // dead and the next turn must reload the whole context (2× input price) — that is when `/clear`
+  // is worth the most.
   idle?: { minutes: number; cacheAlive: boolean; reloadCost: number | null } | null;
 }
 
-// Dưới ngưỡng này thì khoảng nghỉ không đáng bận tâm — đừng làm nhiễu statusline.
+// Below this, a pause isn't worth mentioning — don't clutter the status line.
 const IDLE_SHOW_MIN = 10;
-// TTL cache 1 giờ (Claude Code dùng bản 1h). Xem README → Where the money goes.
+// The 1-hour cache TTL (Claude Code uses the 1h variant). See README → Where the money goes.
 export const CACHE_TTL_MIN = 60;
 
 export function fmtIdle(min: number): string {
   const m = Math.round(min);
-  return m < 60 ? `${m}ph` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
 }
 
-// Đệm autocompact — khớp cách Claude Code tính % trong /context.
+// Autocompact buffer — matches how Claude Code computes the percentage in /context.
 const AUTOCOMPACT_BUFFER = 45000;
 
 function bar(pct: number, width = 10): string {
@@ -77,7 +78,7 @@ function homify(p: string): string {
 
 type CtxWindow = NonNullable<StatuslineInput["context_window"]>;
 
-/** Tổng token đang chiếm context (ưu tiên current_usage như /context). */
+/** Total tokens occupying the context (prefers current_usage, like /context). */
 function totalTokens(cw: CtxWindow): number {
   const u = cw.current_usage;
   if (u) {
@@ -86,7 +87,7 @@ function totalTokens(cw: CtxWindow): number {
   return (cw.total_input_tokens ?? 0) + (cw.total_output_tokens ?? 0);
 }
 
-/** % context — công thức /context (current_usage + buffer)/size; fallback used_percentage. */
+/** Context % — the /context formula (current_usage + buffer)/size; falls back to used_percentage. */
 function ctxPercent(cw: CtxWindow): number | undefined {
   const size = cw.context_window_size ?? 0;
   if (cw.current_usage && size > AUTOCOMPACT_BUFFER) {
@@ -103,9 +104,9 @@ function ctxLabel(size: number): string {
 }
 
 /**
- * Render statusline (PURE). Dòng 1 từ `input`; dòng 2-3 từ `extras`.
- * Không truyền extras => chỉ render dòng 1.
- * Layout 3 dòng ngang statusline.cjs:
+ * Render the status line (PURE). Line 1 comes from `input`; lines 2-3 from `extras`.
+ * Without extras, only line 1 is rendered.
+ * The 3-line layout, matching statusline.cjs:
  *   L1: dot model (label) · bar % · ~tok · ⏳quota · $cost
  *   L2: 📁 dir · 🌿 branch ↑↓ · 📋 plan
  *   L3: 📝 +/- · ✅ todo · 🔧 tools
@@ -123,7 +124,7 @@ export function renderStatusline(
   const dot = pct == null ? "⚪" : pct >= cfg.dangerPct ? "🔴" : pct >= cfg.warnPct ? "🟡" : "🟢";
   const model = input.model?.display_name ?? input.model?.id ?? "Claude";
   const label = ctxLabel(size);
-  // display_name của Claude Code đôi khi đã kèm sẵn nhãn (vd "Opus 4.8 (1M context)") → tránh lặp.
+  // Claude Code's display_name sometimes already carries the label (e.g. "Opus 4.8 (1M context)") → avoid repeating it.
   const showLabel = !!label && !/\(\s*\d+\s*[KM]\b[^)]*\)/.test(model);
 
   // L1
@@ -131,17 +132,17 @@ export function renderStatusline(
   if (pct != null) l1.push(`${bar(pct)} ${pct}%`);
   if (tokens > 0) l1.push(`~${Math.round(tokens / 1000)}k tok`);
   if (extras?.quota) l1.push(extras.quota);
-  // Ưu tiên cost đã neo theo phiên (reset khi /clear); fallback total tích luỹ từ Claude Code.
+  // Prefer the session-anchored cost (resets on /clear); fall back to Claude Code's cumulative total.
   const cost = extras?.cost ?? input.cost?.total_cost_usd;
   if (cost != null) l1.push(`$${cost.toFixed(2)}`);
-  if (extras?.perTurn) l1.push(`$${extras.perTurn.toFixed(2)}/lượt`);
+  if (extras?.perTurn) l1.push(`$${extras.perTurn.toFixed(2)}/turn`);
   const idle = extras?.idle;
   if (idle && idle.minutes >= IDLE_SHOW_MIN) {
-    // cache đã chết => nêu luôn giá nạp lại, vì đây đúng là lúc quyết định /clear hay không
+    // Cache already dead => show the reload price, because this is exactly the moment to decide on /clear
     l1.push(
       idle.cacheAlive
         ? `🕐 ${fmtIdle(idle.minutes)}`
-        : `❄️ ${fmtIdle(idle.minutes)}${idle.reloadCost ? ` · nạp lại ~$${idle.reloadCost.toFixed(2)}` : ""}`,
+        : `❄️ ${fmtIdle(idle.minutes)}${idle.reloadCost ? ` · reload ~$${idle.reloadCost.toFixed(2)}` : ""}`,
     );
   }
   const lines = [l1.join(" · ")];
@@ -158,7 +159,7 @@ export function renderStatusline(
     if (extras.plan) l2.push(`📋 ${extras.plan}`);
     lines.push(l2.join(" · "));
 
-    // L3: diff · todo · tools (chỉ khi có ít nhất 1)
+    // L3: diff · todo · tools (only when at least one exists)
     const l3: string[] = [];
     if (extras.git && (extras.git.added || extras.git.removed)) {
       l3.push(`📝 +${extras.git.added} -${extras.git.removed}`);
@@ -175,7 +176,7 @@ export function renderStatusline(
   return lines.join("\n");
 }
 
-// ---- Thu thập I/O (không pure) — dùng bởi cli, không gọi trong test render ----
+// ---- I/O collection (not pure) — used by the CLI, never called from render tests ----
 
 const GIT_ALLOWED = new Set([
   "git rev-parse --git-dir",
@@ -208,8 +209,8 @@ function parseShortstat(s: string): { added: number; removed: number } {
   };
 }
 
-// Statusline render rất thường xuyên, mỗi lần là 1 process kt mới → cache file ngắn hạn
-// để khỏi spawn 6 lệnh git mỗi render. TTL ngắn nên vẫn đủ tươi cho diff chưa stage.
+// The status line renders very often, each time as a fresh kt process → cache to a file briefly
+// so we don't spawn 6 git commands per render. The TTL is short enough to stay fresh for unstaged diffs.
 const GIT_CACHE_TTL_MS = 1500;
 
 export function collectGit(cwd: string, now: number = Date.now()): GitInfo | null {
@@ -244,7 +245,7 @@ function computeGit(cwd: string): GitInfo | null {
   return { branch, ahead, behind, added: unstaged.added + staged.added, removed: unstaged.removed + staged.removed };
 }
 
-/** Parse transcript JSONL: đếm tool_use + lấy TODO mới nhất. Cache theo mtime ở tmpdir. */
+/** Parse the transcript JSONL: count tool_use + take the latest TODO. Cached by mtime in tmpdir. */
 export function parseTranscript(transcriptPath?: string): { tools: number; todos: { done: number; total: number } | null } {
   if (!transcriptPath || !existsSync(transcriptPath)) return { tools: 0, todos: null };
   let mtime: number;
@@ -298,7 +299,7 @@ function fmtMsLeft(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m left`;
 }
 
-/** Quota 5h từ cache CK-stack (nếu có). `now` injectable để test. */
+/** The 5-hour quota from the CK-stack cache (when present). `now` is injectable for tests. */
 export function readQuota(now: number = Date.now()): string | null {
   try {
     const q = JSON.parse(readFileSync(join(tmpdir(), "ck-usage-limits-cache.json"), "utf8"));
@@ -315,7 +316,7 @@ export function readQuota(now: number = Date.now()): string | null {
   }
 }
 
-/** Active plan từ cache CK-stack theo session (nếu có). */
+/** The active plan from the per-session CK-stack cache (when present). */
 export function readActivePlan(sessionId?: string): string | null {
   if (!sessionId) return null;
   try {
@@ -328,10 +329,10 @@ export function readActivePlan(sessionId?: string): string | null {
 }
 
 /**
- * Cost của RIÊNG phiên hiện tại. `total_cost_usd` Claude Code gửi là tích luỹ theo cả
- * lần chạy CLI nên `/clear` không reset nó. Ta neo `baseline` theo conversation
- * (định danh bằng transcript_path); khi conversation đổi (do /clear) hoặc total tụt
- * (Claude tự reset) thì tái-neo → hiển thị `total - baseline`, bắt đầu lại từ ~0.
+ * The cost of THIS session alone. The `total_cost_usd` Claude Code sends accumulates across the whole
+ * CLI run, so `/clear` doesn't reset it. We anchor a `baseline` per conversation (identified by
+ * transcript_path); when the conversation changes (via /clear) or the total drops (Claude reset it),
+ * we re-anchor → displaying `total - baseline`, starting from ~0 again.
  */
 export function sessionCost(input: StatuslineInput): number | undefined {
   const total = input.cost?.total_cost_usd;
@@ -345,7 +346,7 @@ export function sessionCost(input: StatuslineInput): number | undefined {
       return total - st.baseline;
     }
   } catch {}
-  // conversation mới / đổi transcript (clear) / total tụt → neo lại baseline, cost về 0
+  // New conversation / changed transcript (clear) / total dropped → re-anchor the baseline, cost back to 0
   try {
     writeFileSync(statePath, JSON.stringify({ transcriptPath: transcript, baseline: total }));
   } catch {}
@@ -353,8 +354,8 @@ export function sessionCost(input: StatuslineInput): number | undefined {
 }
 
 /**
- * Token kt đã tiết kiệm cho project này (đọc .kt/runs/index.jsonl — cùng nguồn với `kt stats`).
- * index.jsonl tự trim nên đây là "tiết kiệm gần đây", không phải per-session. Token ≈ chars/4.
+ * Tokens kt has saved for this project (reads .kt/runs/index.jsonl — the same source as `kt stats`).
+ * index.jsonl self-trims, so this is "recent savings", not per-session. Tokens ≈ chars/4.
  */
 export function collectSavedTokens(cwd: string): number | null {
   try {
@@ -368,8 +369,9 @@ export function collectSavedTokens(cwd: string): number | null {
 }
 
 /**
- * Đã im lặng bao lâu, tính từ lần ghi transcript cuối (mtime — rẻ, statusline render rất thường).
- * Quá TTL thì cache chết: lượt kế tiếp phải ghi lại toàn bộ context ở giá 2× input.
+ * How long it has been silent, measured from the last transcript write (mtime — cheap, and the status
+ * line renders often). Past the TTL the cache is dead: the next turn must rewrite the whole context at
+ * 2× the input price.
  */
 export function collectIdle(
   input: StatuslineInput,
@@ -410,7 +412,7 @@ export function collectExtras(input: StatuslineInput, pricing?: PricingTable): E
     plan: readActivePlan(input.session_id),
     cost: sessionCost(input),
     savedTokens: collectSavedTokens(dir),
-    // cần model *id* (vd claude-opus-5) — display_name ("Opus 5") không khớp bảng giá.
+    // needs the model *id* (e.g. claude-opus-5) — display_name ("Opus 5") doesn't match the price table.
     perTurn: pricing && modelId ? perTurnCost(totalTokens(cw), modelId, pricing) : null,
     idle: collectIdle(input, pricing),
   };

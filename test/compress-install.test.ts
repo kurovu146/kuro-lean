@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { compressInstall } from "../src/compressors/install";
 import type { CompressInput } from "../src/compressors/types";
 
-test("install fail => GIỮ toàn bộ body lỗi", () => {
+test("install fail => KEEP the whole error body", () => {
   const input: CompressInput = {
     stdout: [
       "npm ERR! code E404",
@@ -16,7 +16,7 @@ test("install fail => GIỮ toàn bộ body lỗi", () => {
   expect(r.text).toContain("not in this registry");
 });
 
-test("giữ dòng kết quả + warn, bỏ progress", () => {
+test("keeps the result line + warnings, drops progress noise", () => {
   const input: CompressInput = {
     stdout: [
       "Resolving dependencies",

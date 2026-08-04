@@ -12,7 +12,7 @@ import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-/** Dưới ngưỡng này phiên chưa kịp có việc gì để cứu — đừng chen vào bảng chọn. */
+/** Below this, a session has nothing worth rescuing yet - keep it out of the picker. */
 const MIN_SESSION_BYTES = 20_000;
 const LIST_LIMIT = 20;
 
@@ -60,9 +60,9 @@ async function main() {
       const projectsRoot = join(homedir(), ".claude", "projects");
 
       /**
-       * `--copy`: bản trích sinh ra là để DÁN vào phiên mới, nên chặng cuối phải là clipboard.
-       * Ghi ra file thì còn phải nhớ file nằm đâu rồi mở lên copy — thừa hai bước ở đúng lúc
-       * đang vội. Báo số ký tự để biết có thật sự copy được gì không.
+       * `--copy`: the extract exists to be PASTED into a new session, so the last leg should be the
+       * clipboard. Writing a file means remembering where it went and opening it to copy - two extra
+       * steps at exactly the wrong moment. Report the size so you know something was actually copied.
        */
       const emit = (text: string) => {
         if (args.mode === "list" || !args.copy) {
@@ -71,49 +71,49 @@ async function main() {
         }
         const c = clipboardCommand(process.platform);
         if (!c) {
-          process.stderr.write(`kt: không biết lệnh clipboard cho ${process.platform} — dùng \`> cuu.md\`\n`);
+          process.stderr.write(`kt: no clipboard command known for ${process.platform} - use \`> rescue.md\`\n`);
           process.exit(1);
         }
         try {
           Bun.spawnSync([c.cmd, ...c.args], { stdin: Buffer.from(text) });
         } catch {
-          process.stderr.write(`kt: không chạy được \`${c.cmd}\` — dùng \`> cuu.md\`\n`);
+          process.stderr.write(`kt: could not run \`${c.cmd}\` - use \`> rescue.md\`\n`);
           process.exit(1);
         }
         process.stderr.write(
-          `✓ đã copy ${text.length.toLocaleString("vi-VN")} ch (~${Math.round(text.length / 4 / 100) / 10}k token) vào clipboard — dán vào phiên mới\n`,
+          `✓ copied ${text.length.toLocaleString("en-US")} chars (~${Math.round(text.length / 4 / 100) / 10}k tokens) to the clipboard - paste it into a new session\n`,
         );
       };
 
-      // --list: phiên bỏ dở trên TOÀN MÁY. Quên handoff thì thường quên luôn phiên nằm ở repo
-      // nào, mà --recover lại bám theo cwd — không có bảng này thì không biết đường mà cd.
+      // --list: abandoned sessions across the WHOLE MACHINE. Forgetting handoff usually means forgetting
+      // which repo the session was in, and --recover follows cwd - without this table there is no way to know.
       if (args.mode === "list") {
         const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: args.limit });
         process.stdout.write(renderSessions(rows, config.pricing));
-        if (rows.length) process.stdout.write("\n  → kt handoff --recover --from <#> > cuu.md\n");
+        if (rows.length) process.stdout.write("\n  → kt handoff --recover --from <#> > rescue.md\n");
         return;
       }
 
-      // --recover: cứu phiên đã mất cache (máy tắt, về gấp). Transcript nằm trên đĩa nên
-      // đọc được bất cứ lúc nào — không cần cache, không cần resume phiên cũ.
+      // --recover: rescue a session whose cache is gone (machine off, left in a hurry). The transcript lives
+      // on disk, so it can be read at any time - no cache needed, no resuming the old session.
       if (args.mode === "recover") {
         const { latestTranscript, extractTail, recoverPrompt } = await import("./recover");
         const { readFileSync } = await import("fs");
-        // --from: chỉ thẳng phiên cần cứu. Không có nó thì "phiên gần nhất của cwd" rất dễ là
-        // phiên vừa mở để chạy lệnh, và nó che mất đúng phiên có việc.
+        // --from: point straight at the session to rescue. Without it, "the newest session of this cwd" is
+        // very often the session just opened to run a command, which buries the one that has the work.
         let file: string | null;
         if (args.from) {
           const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: LIST_LIMIT });
           file = resolveFrom(rows, args.from);
           if (!file) {
-            process.stderr.write(`kt: không hiểu --from ${args.from} (xem \`kt handoff --list\`)\n`);
+            process.stderr.write(`kt: could not understand --from ${args.from} (see \`kt handoff --list\`)\n`);
             process.exit(1);
           }
         } else {
           file = latestTranscript(transcriptDir(process.cwd()));
         }
         if (!file || !existsSync(file)) {
-          process.stderr.write("kt: không tìm thấy transcript nào (thử `kt handoff --list`)\n");
+          process.stderr.write("kt: no transcript found (try `kt handoff --list`)\n");
           process.exit(1);
         }
         const lines = readFileSync(file, "utf8").split("\n");
@@ -121,14 +121,14 @@ async function main() {
         return;
       }
 
-      // In prompt để dán vào Claude trước khi nghỉ — chưng cất context xuống file,
-      // phiên sau bắt đầu nhẹ thay vì resume cả đống lịch sử (xem README).
+      // Print the prompt to paste into Claude before stopping for the day - it distils the context into a
+      // file so the next session starts light instead of resuming a pile of history (see README).
       emit(handoffPrompt(args.file) + "\n");
       return;
     }
     case "cost": {
-      // Hoá đơn thật, quy từ usage trong transcript. Khác `kt stats` (chỉ đếm chars nén được):
-      // phần lớn tiền nằm ở cache read/write của context, không ở output shell.
+      // The real bill, derived from usage in the transcripts. Unlike `kt stats` (which only counts compressed
+      // chars): most of the money sits in the context cache read/write, not in shell output.
       const dir = transcriptDir(rest[0] || process.cwd());
       process.stdout.write(renderCost(collectUsage(dir), config.pricing));
       return;
@@ -150,14 +150,14 @@ async function main() {
       if (process.env.KT_DISABLE === "1") return;
       let input: any;
       try { input = JSON.parse((await readStdin()) || "{}"); }
-      catch { return; }   // malformed stdin → no-op, đừng chặn oan lượt của user
+      catch { return; }   // malformed stdin -> no-op, never block a turn unfairly
       const { promptGuardOutput } = await import("./hooks/prompt");
       const out = promptGuardOutput(input, config);
       if (out) process.stdout.write(out);
       return;
     }
     case "hook-guard": {
-      if (process.env.KT_DISABLE === "1") return;   // kill-switch: tắt cả guard
+      if (process.env.KT_DISABLE === "1") return;   // kill switch: disables the guard too
       let input: any;
       try { input = JSON.parse((await readStdin()) || "{}"); }
       catch { return; }   // malformed stdin → no-op, let the command run normally
@@ -178,7 +178,7 @@ async function main() {
     }
     case "show": {
       const out = showRun(rest[0]);
-      process.stdout.write(out ?? "(không có log)\n");
+      process.stdout.write(out ?? "(no log)\n");
       return;
     }
     case "stats": {
@@ -191,13 +191,13 @@ async function main() {
       const { join } = await import("path");
       const settingsPath = join(homedir(), ".claude", "settings.json");
       const r = installSettings(settingsPath, "kt");
-      process.stdout.write(r.changed ? `✓ đã cài vào ${settingsPath}${r.backup ? ` (backup: ${r.backup})` : ""}\n` : "✓ đã cài sẵn, không đổi gì\n");
+      process.stdout.write(r.changed ? `✓ installed into ${settingsPath}${r.backup ? ` (backup: ${r.backup})` : ""}\n` : "✓ already installed, nothing changed\n");
       for (const name of ["concise-output", "lean-code"]) {
         try {
           const s = installSkill(join(homedir(), ".claude", "skills"), join(import.meta.dir, "..", "skills", `${name}.md`));
-          process.stdout.write(s.changed ? `✓ đã cài skill ${name}\n` : `✓ skill ${name} đã có, không đổi gì\n`);
+          process.stdout.write(s.changed ? `✓ installed skill ${name}\n` : `✓ skill ${name} already present, nothing changed\n`);
         } catch (e: any) {
-          process.stderr.write(`⚠ không cài được skill ${name}: ${e?.message ?? e}\n`);
+          process.stderr.write(`⚠ could not install skill ${name}: ${e?.message ?? e}\n`);
         }
       }
       return;
@@ -211,13 +211,13 @@ async function main() {
       const { runBench, parseBenchFlags, realSpawn } = await import("./bench");
       const opts = parseBenchFlags(rest);
       if (!Bun.which("claude")) {
-        process.stderr.write("kt bench cần `claude` CLI trên PATH.\n");
+        process.stderr.write("kt bench needs the `claude` CLI on PATH.\n");
         process.exit(1);
       }
       if (!Bun.which("kt")) {
-        process.stderr.write("⚠ `kt` không có trên PATH — arm kt sẽ không nén (hook gọi `kt`). Chạy `bun link` trước.\n");
+        process.stderr.write("⚠ `kt` is not on PATH - the kt arm will not compress (the hook calls `kt`). Run `bun link` first.\n");
       }
-      process.stderr.write(`kt bench: 2 arms × ${opts.runs} runs, model ${opts.model} — chạy phiên Claude THẬT, tốn quota.\n`);
+      process.stderr.write(`kt bench: 2 arms x ${opts.runs} runs, model ${opts.model} - runs REAL Claude sessions and spends quota.\n`);
       const report = await runBench(opts, realSpawn, (s) => process.stderr.write(s + "\n"));
       process.stdout.write(report);
       return;

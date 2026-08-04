@@ -24,22 +24,24 @@ export interface Config {
 
 export const defaultConfig: Config = {
   profiles: { test: true, build: true, install: true, git: true, lint: true, generic: true },
-  // thresholdLines 0 = không cắt head/tail cho profile generic; chỉ dựa vào limits.maxChars.
-  // Cắt giữa của grep/sed/ls làm model mất tín hiệu → phải `kt show` = thêm turn.
+  // thresholdLines 0 = no head/tail trimming for the generic profile; rely on limits.maxChars alone.
+  // Cutting the middle out of grep/sed/ls loses the signal → forces a `kt show` = an extra turn.
   generic: { thresholdLines: 0, headLines: 15, tailLines: 10 },
-  limits: { maxChars: 16_000 }, // ~4k token; chốt chặn sau mọi compressor
-  // timeoutMs: suite e2e chậm hơn 2' → tăng trong kt.json của project đó.
-  // rawUnderChars: output nhỏ hơn ngưỡng (~1k token) trả NGUYÊN VĂN không nén — kt bench 2026-07-05
-  // đo được nén output nhỏ làm model tốn thêm turn xác minh (+34% ctx), lỗ hơn phần nén được. 0 = tắt.
+  limits: { maxChars: 16_000 }, // ~4k tokens; the backstop after every compressor
+  // timeoutMs: an e2e suite slower than 2 minutes → raise it in that project's kt.json.
+  // rawUnderChars: output below the threshold (~1k tokens) is returned VERBATIM, uncompressed — kt bench
+  // on 2026-07-05 measured that compressing small output costs the model an extra verification turn
+  // (+34% ctx), losing more than the compression saves. 0 = disabled.
   run: { timeoutMs: 120_000, rawUnderChars: 4000 },
   store: { keepRuns: 50 },
   statusline: { warnPct: 60, dangerPct: 85 },
   guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, gitLogP: true, catBig: true, readNoise: true } },
-  // Chặn lượt đầu tiên sau khi cache chết (TTL 1h) để hỏi lại: tiếp phiên cũ hay `kt handoff
-  // --recover` cho rẻ. Chặn TRƯỚC khi request rời máy nên không mất tiền nạp lại. 0 = tắt.
+  // Block the first turn after the cache dies (1h TTL) to ask: continue the old session, or use
+  // `kt handoff --recover` for cheap. It blocks BEFORE the request leaves the machine, so the reload
+  // is never paid for. 0 = disabled.
   promptGuard: { idleMin: 60, minTokens: 50_000 },
-  // USD/1M token, khớp theo tiền tố model id. Giá đổi theo thời gian → sửa trong kt.json,
-  // model không có ở đây thì `kt cost` bỏ qua (thà thiếu còn hơn báo sai tiền).
+  // USD per 1M tokens, matched by model-id prefix. Prices change over time → edit them in kt.json;
+  // a model absent from here is skipped by `kt cost` (better to omit than to report the wrong money).
   pricing: {
     "claude-fable-5": { input: 10, output: 50 },
     "claude-mythos-5": { input: 10, output: 50 },

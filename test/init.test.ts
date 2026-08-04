@@ -5,7 +5,7 @@ import { installSettings, installSkill, runDoctor } from "../src/init";
 const DIR = "/tmp/kt-test-init";
 const settings = `${DIR}/settings.json`;
 
-test("settings trống => thêm hook + statusLine", () => {
+test("empty settings => adds the hooks + statusLine", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, "{}");
@@ -18,7 +18,7 @@ test("settings trống => thêm hook + statusLine", () => {
   expect(hooks).toContain("kt hook-compress");
 });
 
-test("đăng ký matcher Read => kt hook-guard (chặn file nhiễu)", () => {
+test("registers the Read matcher => kt hook-guard (blocks noisy files)", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, "{}");
@@ -29,7 +29,7 @@ test("đăng ký matcher Read => kt hook-guard (chặn file nhiễu)", () => {
   expect(readBlock.hooks.map((h: any) => h.command)).toContain("kt hook-guard");
 });
 
-test("đăng ký UserPromptSubmit => kt hook-prompt (chặn lượt đầu sau khi cache chết)", () => {
+test("registers UserPromptSubmit => kt hook-prompt (blocks the first turn after the cache dies)", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, "{}");
@@ -37,11 +37,11 @@ test("đăng ký UserPromptSubmit => kt hook-prompt (chặn lượt đầu sau k
   const cfg = JSON.parse(readFileSync(settings, "utf8"));
   const cmds = cfg.hooks.UserPromptSubmit.flatMap((b: any) => b.hooks.map((h: any) => h.command));
   expect(cmds).toContain("kt hook-prompt");
-  // event không theo tool => không được gắn matcher, Claude Code chỉ nhận matcher cho tool event
+  // a non-tool event => must carry no matcher; Claude Code only accepts matchers for tool events
   expect(cfg.hooks.UserPromptSubmit[0].matcher).toBeUndefined();
 });
 
-test("UserPromptSubmit: chạy lần 2 không nhân đôi, hook sẵn có của user còn nguyên", () => {
+test("UserPromptSubmit: a second run does not duplicate it, the user's existing hooks survive", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, JSON.stringify({
@@ -55,7 +55,7 @@ test("UserPromptSubmit: chạy lần 2 không nhân đôi, hook sẵn có của 
   expect(cmds.filter((c: string) => c === "kt hook-prompt").length).toBe(1);
 });
 
-test("doctor: báo trạng thái hook-prompt", () => {
+test("doctor: reports the hook-prompt status", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(`${DIR}/.claude`, { recursive: true });
   writeFileSync(`${DIR}/.claude/settings.json`, "{}");
@@ -63,20 +63,20 @@ test("doctor: báo trạng thái hook-prompt", () => {
   expect(runDoctor(DIR)).toContain("hook-prompt:  ✓");
 });
 
-test("có statusLine custom sẵn => KHÔNG ghi đè, vẫn thêm hook", () => {
+test("an existing custom statusLine => NOT overwritten, hooks still added", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   const custom = "node \"$HOME/.claude/statusline.cjs\"";
   writeFileSync(settings, JSON.stringify({ statusLine: { type: "command", command: custom, padding: 0 } }));
   installSettings(settings, "kt");
   const cfg = JSON.parse(readFileSync(settings, "utf8"));
-  expect(cfg.statusLine.command).toBe(custom); // giữ nguyên statusline custom
+  expect(cfg.statusLine.command).toBe(custom); // the custom statusline is left alone
   const hooks = cfg.hooks.PreToolUse[0].hooks.map((h: any) => h.command);
   expect(hooks).toContain("kt hook-guard");
   expect(hooks).toContain("kt hook-compress");
 });
 
-test("idempotent: chạy lần 2 không nhân đôi", () => {
+test("idempotent: a second run does not duplicate anything", () => {
   installSettings(settings, "kt");
   const before = readFileSync(settings, "utf8");
   const r = installSettings(settings, "kt");
@@ -84,7 +84,7 @@ test("idempotent: chạy lần 2 không nhân đôi", () => {
   expect(readFileSync(settings, "utf8")).toBe(before);
 });
 
-test("giữ nguyên hook/config có sẵn của user", () => {
+test("leaves the user's existing hooks/config intact", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, JSON.stringify({ env: { FOO: "bar" }, hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "my-hook" }] }] } }));
@@ -95,7 +95,7 @@ test("giữ nguyên hook/config có sẵn của user", () => {
   expect(existsSync(`${settings}.bak`)).toBe(true);
 });
 
-test("thêm Bash(kt run:*) vào permissions.allow, giữ allow có sẵn", () => {
+test("adds Bash(kt run:*) to permissions.allow, keeping the existing entries", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }));
@@ -103,13 +103,13 @@ test("thêm Bash(kt run:*) vào permissions.allow, giữ allow có sẵn", () =>
   const cfg = JSON.parse(readFileSync(settings, "utf8"));
   expect(cfg.permissions.allow).toContain("Bash(kt run:*)");
   expect(cfg.permissions.allow).toContain("Bash(ls:*)");
-  // idempotent: chạy lại không nhân đôi
+  // idempotent: re-running does not duplicate
   installSettings(settings, "kt");
   const again = JSON.parse(readFileSync(settings, "utf8"));
   expect(again.permissions.allow.filter((p: string) => p === "Bash(kt run:*)").length).toBe(1);
 });
 
-test("installSkill: copy vào <skills>/concise-output/SKILL.md, idempotent", () => {
+test("installSkill: copies to <skills>/concise-output/SKILL.md, idempotent", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   const skillsDir = `${DIR}/skills`;
@@ -120,17 +120,17 @@ test("installSkill: copy vào <skills>/concise-output/SKILL.md, idempotent", () 
   expect(r2.changed).toBe(false);
 });
 
-test("installSkill: user đã có skill (kể cả custom) => KHÔNG ghi đè", () => {
+test("installSkill: the user already has the skill (custom or not) => NOT overwritten", () => {
   rmSync(DIR, { recursive: true, force: true });
   const skillsDir = `${DIR}/skills`;
   mkdirSync(`${skillsDir}/concise-output`, { recursive: true });
-  writeFileSync(`${skillsDir}/concise-output/SKILL.md`, "custom của anh");
+  writeFileSync(`${skillsDir}/concise-output/SKILL.md`, "the user's own version");
   const r = installSkill(skillsDir, "skills/concise-output.md");
   expect(r.changed).toBe(false);
-  expect(readFileSync(`${skillsDir}/concise-output/SKILL.md`, "utf8")).toBe("custom của anh");
+  expect(readFileSync(`${skillsDir}/concise-output/SKILL.md`, "utf8")).toBe("the user's own version");
 });
 
-test("runDoctor: báo trạng thái permission kt run + skill concise-output", () => {
+test("runDoctor: reports the kt run permission + the concise-output skill", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(`${DIR}/.claude/skills/concise-output`, { recursive: true });
   writeFileSync(
@@ -143,11 +143,11 @@ test("runDoctor: báo trạng thái permission kt run + skill concise-output", (
   expect(out).toMatch(/skill concise-output:\s+✓/);
 });
 
-test("runDoctor: statusLine là wrapper script gọi kt status bên trong => ✓", () => {
+test("runDoctor: a statusLine that is a wrapper script calling kt status inside => OK", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(`${DIR}/.claude`, { recursive: true });
   mkdirSync(`${DIR}/scripts`, { recursive: true });
-  // giống statusline.sh thật: kt nằm trong biến, gọi qua "$KT" status
+  // like a real statusline.sh: kt lives in a variable, invoked as "$KT" status
   writeFileSync(
     `${DIR}/scripts/statusline.sh`,
     'KT="/Users/x/.bun/bin/kt"\nbase=$(printf \'%s\' "$input" | "$KT" status 2>/dev/null)\n',
@@ -160,23 +160,23 @@ test("runDoctor: statusLine là wrapper script gọi kt status bên trong => ✓
   expect(out).toMatch(/statusLine kt:\s+✓/);
 });
 
-test("settings.json hỏng => installSettings báo lỗi rõ, KHÔNG ghi đè", () => {
+test("a corrupt settings.json => installSettings errors clearly and does NOT overwrite", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, "{ not json");
-  expect(() => installSettings(settings, "kt")).toThrow(/không phải JSON hợp lệ/);
-  expect(readFileSync(settings, "utf8")).toBe("{ not json"); // file nguyên vẹn
+  expect(() => installSettings(settings, "kt")).toThrow(/is not valid JSON/);
+  expect(readFileSync(settings, "utf8")).toBe("{ not json"); // the file is untouched
 });
 
-test("runDoctor: settings.json hỏng => cảnh báo, không crash", () => {
+test("runDoctor: a corrupt settings.json => warns without crashing", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(`${DIR}/.claude`, { recursive: true });
   writeFileSync(`${DIR}/.claude/settings.json`, "{ broken");
   const out = runDoctor(DIR);
-  expect(out).toContain("không phải JSON hợp lệ");
+  expect(out).toContain("is not valid JSON");
 });
 
-test("append vào Bash matcher có sẵn, không tạo block trùng", () => {
+test("appends to an existing Bash matcher without creating a duplicate block", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "user-bash-hook" }] }] } }));
@@ -190,7 +190,7 @@ test("append vào Bash matcher có sẵn, không tạo block trùng", () => {
   expect(cmds).toContain("kt hook-compress");
 });
 
-test("installSkill: suy tên skill từ tên file nguồn (lean-code)", () => {
+test("installSkill: derives the skill name from the source filename (lean-code)", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
   const skillsDir = `${DIR}/skills`;
@@ -201,17 +201,17 @@ test("installSkill: suy tên skill từ tên file nguồn (lean-code)", () => {
   expect(r2.changed).toBe(false);
 });
 
-test("installSkill: user đã có lean-code custom => KHÔNG ghi đè", () => {
+test("installSkill: the user already has a custom lean-code => NOT overwritten", () => {
   rmSync(DIR, { recursive: true, force: true });
   const skillsDir = `${DIR}/skills`;
   mkdirSync(`${skillsDir}/lean-code`, { recursive: true });
-  writeFileSync(`${skillsDir}/lean-code/SKILL.md`, "custom của anh");
+  writeFileSync(`${skillsDir}/lean-code/SKILL.md`, "the user's own version");
   const r = installSkill(skillsDir, "skills/lean-code.md");
   expect(r.changed).toBe(false);
-  expect(readFileSync(`${skillsDir}/lean-code/SKILL.md`, "utf8")).toBe("custom của anh");
+  expect(readFileSync(`${skillsDir}/lean-code/SKILL.md`, "utf8")).toBe("the user's own version");
 });
 
-test("runDoctor: báo trạng thái cả skill lean-code", () => {
+test("runDoctor: reports the lean-code skill status too", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(`${DIR}/.claude/skills/lean-code`, { recursive: true });
   writeFileSync(`${DIR}/.claude/skills/lean-code/SKILL.md`, "x");

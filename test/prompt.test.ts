@@ -15,7 +15,7 @@ import { transcriptDir } from "../src/cost";
 const PRICE = { input: 5, output: 25 };
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-prompt-"));
 
-/** transcript giả với 1 lượt usage; mtime lùi `idleMin` phút để giả cảnh phiên bỏ dở. */
+/** A fake transcript with one usage turn; mtime backdated `idleMin` minutes to fake an abandoned session. */
 function fakeTranscript(tokens: number, idleMin: number, model = "claude-opus-5"): string {
   const f = join(tmp(), `${Math.random().toString(36).slice(2)}.jsonl`);
   writeFileSync(f, JSON.stringify({ message: { model, usage: { cache_read_input_tokens: tokens } } }));
@@ -24,7 +24,7 @@ function fakeTranscript(tokens: number, idleMin: number, model = "claude-opus-5"
   return f;
 }
 
-test("cache còn sống => không chặn (chặn lúc này là phá đám vô cớ)", () => {
+test("cache still alive => don't block (blocking here is pointless interference)", () => {
   const d = decidePromptGuard(
     { idleMinutes: 42, tokens: 500_000, price: PRICE, alreadyWarned: false },
     { idleMin: 60, minTokens: 50_000 },
@@ -32,18 +32,18 @@ test("cache còn sống => không chặn (chặn lúc này là phá đám vô c�
   expect(d).toBeNull();
 });
 
-test("quá TTL => chặn, nêu rõ thời gian im và giá nạp lại", () => {
+test("past the TTL => block, stating the idle time and the reload price", () => {
   const d = decidePromptGuard(
     { idleMinutes: 192, tokens: 500_000, price: PRICE, alreadyWarned: false },
     { idleMin: 60, minTokens: 50_000 },
   );
   expect(d).not.toBeNull();
-  expect(d!.reason).toContain("3h12"); // 192 phút
+  expect(d!.reason).toContain("3h12"); // 192 minutes
   expect(d!.reason).toContain("$5.00"); // 500k tok × $5/1M × 2 (cache write)
   expect(d!.reason).toContain("handoff --recover");
 });
 
-test("đã cảnh báo cho đúng lần chết này => cho qua, không chặn vòng lặp", () => {
+test("already warned for this particular expiry => let it through, don't loop", () => {
   const d = decidePromptGuard(
     { idleMinutes: 192, tokens: 500_000, price: PRICE, alreadyWarned: true },
     { idleMin: 60, minTokens: 50_000 },
@@ -51,7 +51,7 @@ test("đã cảnh báo cho đúng lần chết này => cho qua, không chặn v�
   expect(d).toBeNull();
 });
 
-test("idleMin = 0 => tắt hẳn tính năng", () => {
+test("idleMin = 0 => the feature is off entirely", () => {
   const d = decidePromptGuard(
     { idleMinutes: 9999, tokens: 500_000, price: PRICE, alreadyWarned: false },
     { idleMin: 0, minTokens: 50_000 },
@@ -59,7 +59,7 @@ test("idleMin = 0 => tắt hẳn tính năng", () => {
   expect(d).toBeNull();
 });
 
-test("không có giá model => vẫn cảnh báo, chỉ thiếu số tiền (đừng bịa tiền)", () => {
+test("no price for the model => still warn, just without the money (never invent a figure)", () => {
   const d = decidePromptGuard(
     { idleMinutes: 90, tokens: 300_000, price: null, alreadyWarned: false },
     { idleMin: 60, minTokens: 50_000 },
@@ -68,7 +68,7 @@ test("không có giá model => vẫn cảnh báo, chỉ thiếu số tiền (đ�
   expect(d!.reason).not.toContain("$");
 });
 
-test("context nhỏ => không đáng chặn, nạp lại rẻ hơn cả phiền phức", () => {
+test("small context => not worth blocking, reloading costs less than the annoyance", () => {
   const d = decidePromptGuard(
     { idleMinutes: 300, tokens: 8_000, price: PRICE, alreadyWarned: false },
     { idleMin: 60, minTokens: 50_000 },
@@ -76,7 +76,7 @@ test("context nhỏ => không đáng chặn, nạp lại rẻ hơn cả phiền 
   expect(d).toBeNull();
 });
 
-test("hạ minTokens => chặn cả context nhỏ (để thử nghiệm thu, và cho ai xài model đắt)", () => {
+test("lowering minTokens => blocks even a small context (for verification, and for pricier models)", () => {
   const d = decidePromptGuard(
     { idleMinutes: 300, tokens: 8_000, price: PRICE, alreadyWarned: false },
     { idleMin: 60, minTokens: 1_000 },
@@ -84,7 +84,7 @@ test("hạ minTokens => chặn cả context nhỏ (để thử nghiệm thu, và
   expect(d).not.toBeNull();
 });
 
-test("lastContextTokens: lấy usage của lượt CUỐI, không cộng dồn cả phiên", () => {
+test("lastContextTokens: takes the LAST turn's usage, doesn't sum the session", () => {
   const dir = tmp();
   const f = join(dir, "t.jsonl");
   writeFileSync(f, [
@@ -94,22 +94,22 @@ test("lastContextTokens: lấy usage của lượt CUỐI, không cộng dồn c
   expect(lastContextTokens(f)).toBe(402_003);
 });
 
-test("lastContextTokens: dòng hỏng và dòng không usage bị bỏ qua", () => {
+test("lastContextTokens: corrupt lines and lines without usage are skipped", () => {
   const dir = tmp();
   const f = join(dir, "t.jsonl");
   writeFileSync(f, [
     JSON.stringify({ message: { usage: { cache_read_input_tokens: 7_000 } } }),
-    "{hỏng",
+    "{corrupt",
     JSON.stringify({ type: "summary" }),
   ].join("\n"));
   expect(lastContextTokens(f)).toBe(7_000);
 });
 
-test("lastContextTokens: file không có => 0, không ném", () => {
-  expect(lastContextTokens("/khong/co/file.jsonl")).toBe(0);
+test("lastContextTokens: missing file => 0, doesn't throw", () => {
+  expect(lastContextTokens("/no/such/file.jsonl")).toBe(0);
 });
 
-test("marker: neo theo mtime — cùng lần chết thì nhớ, lần chết khác thì quên", () => {
+test("marker: anchored to mtime — remembers one expiry, forgets a different one", () => {
   const p = join(tmp(), "state.json");
   expect(hasWarned(p, 1000)).toBe(false);
   markWarned(p, 1000);
@@ -117,66 +117,67 @@ test("marker: neo theo mtime — cùng lần chết thì nhớ, lần chết kh�
   expect(hasWarned(p, 2000)).toBe(false);
 });
 
-// ---- promptGuardOutput: ráp toàn hook, chính là thứ cli.ts gọi ----
+// ---- promptGuardOutput: the whole hook assembled, which is what cli.ts calls ----
 
-test("phiên vừa chạm vào => im lặng, không đọc transcript, không chặn", () => {
+test("session just touched => stay quiet, don't read the transcript, don't block", () => {
   const out = promptGuardOutput({ transcript_path: fakeTranscript(600_000, 5) }, defaultConfig);
   expect(out).toBeNull();
 });
 
-test("phiên bỏ dở qua đêm => trả JSON block đúng schema Claude Code", () => {
+test("session abandoned overnight => returns block JSON in Claude Code's schema", () => {
   const out = promptGuardOutput({ transcript_path: fakeTranscript(600_000, 300) }, defaultConfig);
   expect(out).not.toBeNull();
   const j = JSON.parse(out!);
   expect(j.decision).toBe("block");
-  expect(j.reason).toContain("Cache context đã hết hạn");
+  expect(j.reason).toContain("The context cache has expired");
   expect(j.reason).toContain("$6.00"); // 600k tok × $5/1M × 2
 });
 
-test("chặn xong thì thôi: gửi lại ngay sau đó phải đi lọt", () => {
+test("blocked once and done: resending straight after must go through", () => {
   const f = fakeTranscript(600_000, 300);
   expect(promptGuardOutput({ transcript_path: f }, defaultConfig)).not.toBeNull();
   expect(promptGuardOutput({ transcript_path: f }, defaultConfig)).toBeNull();
 });
 
-test("transcript không tồn tại và cwd không có phiên nào => im lặng", () => {
-  const out = promptGuardOutput({ transcript_path: "/khong/co.jsonl", cwd: "/khong/co/du/an" }, defaultConfig);
+test("transcript missing and cwd has no sessions => stay quiet", () => {
+  const out = promptGuardOutput({ transcript_path: "/no/such.jsonl", cwd: "/no/such/project" }, defaultConfig);
   expect(out).toBeNull();
 });
 
-test("phiên MỚI mở trong project còn phiên cũ bỏ dở => im lặng, không được vơ transcript phiên khác", () => {
-  // Lượt ĐẦU của một phiên: Claude Code truyền transcript_path đúng, nhưng file chưa được ghi
-  // (đo thật: hook thấy MISSING). Không có transcript của CHÍNH phiên này nghĩa là context còn
-  // rỗng — chẳng có gì để nạp lại, nên phải im. Lấy phiên gần nhất của project là lấy nhầm người.
+test("a NEW session opened in a project with an abandoned one => quiet, must not grab another session's transcript", () => {
+  // The FIRST turn of a session: Claude Code passes a correct transcript_path, but the file isn't
+  // written yet (measured: the hook sees MISSING). Having no transcript for THIS session means the
+  // context is still empty — nothing to reload, so stay quiet. Taking the project's most recent
+  // session takes the wrong person's numbers.
   const cwd = tmp();
   const dir = transcriptDir(cwd);
   mkdirSync(dir, { recursive: true });
   try {
-    const cu = join(dir, "phien-cu.jsonl");
-    writeFileSync(cu, JSON.stringify({ message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 600_000 } } }));
+    const old = join(dir, "old-session.jsonl");
+    writeFileSync(old, JSON.stringify({ message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 600_000 } } }));
     const t = new Date(Date.now() - 300 * 60_000);
-    utimesSync(cu, t, t);
+    utimesSync(old, t, t);
 
-    const out = promptGuardOutput({ transcript_path: join(dir, "phien-moi.jsonl"), cwd }, defaultConfig);
+    const out = promptGuardOutput({ transcript_path: join(dir, "new-session.jsonl"), cwd }, defaultConfig);
     expect(out).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("config: promptGuard mặc định 60 phút (khớp TTL cache) và 50k token", () => {
+test("config: promptGuard defaults to 60 minutes (matching the cache TTL) and 50k tokens", () => {
   expect(defaultConfig.promptGuard.idleMin).toBe(60);
   expect(defaultConfig.promptGuard.minTokens).toBe(50_000);
 });
 
-test("promptGuardOutput: minTokens từ config chứ không hardcode", () => {
+test("promptGuardOutput: minTokens comes from config, not a hardcoded value", () => {
   const f = fakeTranscript(8_000, 300);
   const cfg = { ...defaultConfig, promptGuard: { idleMin: 60, minTokens: 1_000 } };
   expect(promptGuardOutput({ transcript_path: f }, defaultConfig)).toBeNull();
   expect(promptGuardOutput({ transcript_path: f }, cfg)).not.toBeNull();
 });
 
-test("config: kt.json chỉ chỉnh idleMin vẫn giữ nguyên phần config còn lại", () => {
+test("config: a kt.json setting only idleMin leaves the rest of the config intact", () => {
   const dir = tmp();
   writeFileSync(join(dir, "kt.json"), JSON.stringify({ promptGuard: { idleMin: 0 } }));
   const c = loadConfig(dir);

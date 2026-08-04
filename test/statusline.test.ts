@@ -9,7 +9,7 @@ import { rmSync, mkdirSync } from "fs";
 
 const cfg = { warnPct: 60, dangerPct: 85 };
 
-test("dưới warn => xanh + token + cost", () => {
+test("below warn => green + tokens + cost", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 42, total_input_tokens: 80000, total_output_tokens: 4000, context_window_size: 200000 }, model: { display_name: "Opus" }, cost: { total_cost_usd: 0.31 } },
     cfg,
@@ -20,17 +20,17 @@ test("dưới warn => xanh + token + cost", () => {
   expect(s).toContain("$0.31");
 });
 
-test("≥ danger => đỏ", () => {
+test("at or above danger => red", () => {
   const s = renderStatusline({ context_window: { used_percentage: 90, context_window_size: 200000 } }, cfg);
   expect(s).toContain("🔴");
 });
 
-test("thiếu field => không crash", () => {
+test("missing fields => no crash", () => {
   const s = renderStatusline({}, cfg);
   expect(typeof s).toBe("string");
 });
 
-test("ctx% kiểu /context (current_usage + buffer) + label 1M", () => {
+test("ctx% the /context way (current_usage + buffer) + the 1M label", () => {
   const s = renderStatusline(
     {
       model: { display_name: "Opus" },
@@ -44,15 +44,15 @@ test("ctx% kiểu /context (current_usage + buffer) + label 1M", () => {
   // (100000+50000+200000+45000)/1_000_000 = 39.5% -> 40%
   expect(s).toContain("40%");
   expect(s).toContain("(1M context)");
-  expect(s).toContain("▰"); // có bar
+  expect(s).toContain("▰"); // the bar is there
 });
 
-test("label 200K khi size = 200000", () => {
+test("200K label when size = 200000", () => {
   const s = renderStatusline({ context_window: { used_percentage: 10, context_window_size: 200000 } }, cfg);
   expect(s).toContain("(200K)");
 });
 
-test("display_name đã kèm nhãn => không lặp label", () => {
+test("display_name already carries the label => don't repeat it", () => {
   const s = renderStatusline(
     {
       model: { display_name: "Opus 4.8 (1M context)" },
@@ -60,11 +60,11 @@ test("display_name đã kèm nhãn => không lặp label", () => {
     },
     cfg,
   );
-  // chỉ xuất hiện đúng 1 lần, không thành "(1M context) (1M context)"
+  // appears exactly once, never as "(1M context) (1M context)"
   expect(s.match(/\(1M context\)/g)?.length).toBe(1);
 });
 
-test("used_percentage = null (sau /clear) => dot trắng, không có 'null%'", () => {
+test("used_percentage = null (after /clear) => white dot, no 'null%'", () => {
   const s = renderStatusline(
     {
       model: { display_name: "Opus 4.8 (1M context)" },
@@ -78,7 +78,7 @@ test("used_percentage = null (sau /clear) => dot trắng, không có 'null%'", (
   expect(s).toContain("$0.00");
 });
 
-test("3 dòng đầy đủ: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
+test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
   const extras: Extras = {
     dir: `${process.env.HOME}/Dev/kuro-lean`,
     git: { branch: "main", ahead: 1, behind: 0, added: 12, removed: 3 },
@@ -93,7 +93,7 @@ test("3 dòng đầy đủ: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(
     extras,
   );
   const [l1, l2, l3] = s.split("\n");
-  // L1: quota nằm trước cost
+  // L1: quota comes before cost
   expect(l1).toContain("⏳ 3h 12m left (40% used)");
   expect(l1).toContain("$0.50");
   // L2
@@ -107,62 +107,62 @@ test("3 dòng đầy đủ: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(
   expect(l3).toContain("🔧 8 tools");
 });
 
-test("extras tối thiểu (chỉ dir) => L1 + L2(dir), không có L3", () => {
+test("minimal extras (dir only) => L1 + L2(dir), no L3", () => {
   const extras: Extras = { dir: "/tmp/x", git: null, tools: 0, todos: null, quota: null, plan: null };
   const s = renderStatusline({ context_window: { used_percentage: 10, context_window_size: 200000 } }, cfg, extras);
   const lines = s.split("\n");
-  expect(lines.length).toBe(2); // L1 + L2(dir); không có L3 vì không có diff/todo/tools
+  expect(lines.length).toBe(2); // L1 + L2(dir); no L3 without diff/todo/tools
   expect(lines[1]).toContain("📁 /tmp/x");
 });
 
-test("extras.cost ưu tiên hơn input.cost (cost phiên đã reset)", () => {
+test("extras.cost wins over input.cost (the session cost was reset)", () => {
   const extras: Extras = { dir: "/tmp/x", git: null, tools: 0, todos: null, quota: null, plan: null, cost: 0 };
   const s = renderStatusline(
     { context_window: { used_percentage: 10, context_window_size: 200000 }, cost: { total_cost_usd: 0.89 } },
     cfg,
     extras,
   );
-  expect(s).toContain("$0.00"); // không phải $0.89 cũ
+  expect(s).toContain("$0.00"); // not the stale $0.89
   expect(s).not.toContain("$0.89");
 });
 
-test("sessionCost: conversation mới neo baseline => 0, conversation tiếp => total - baseline", () => {
+test("sessionCost: a new conversation anchors the baseline => 0, then total - baseline", () => {
   const session = "sess-cost-probe-1";
   const transcript = "/tmp/kt-tr-probe-A.jsonl";
   const key = createHash("md5").update(session).digest("hex").slice(0, 8);
   const statePath = join(tmpdir(), `kt-cost-${key}.json`);
   try { writeFileSync(statePath, ""); } catch {}
-  // ép trạng thái "chưa có" bằng file rác để đảm bảo re-anchor
+  // force the "nothing stored" state with a junk file so it must re-anchor
   writeFileSync(statePath, "{}");
 
-  // lần đầu thấy transcript này: neo baseline = 0.89 -> cost 0
+  // first sighting of this transcript: anchor baseline = 0.89 -> cost 0
   expect(sessionCost({ session_id: session, transcript_path: transcript, cost: { total_cost_usd: 0.89 } })).toBe(0);
-  // cùng conversation, total tăng -> chỉ tính phần phát sinh sau khi neo
+  // same conversation, total grows -> count only what accrued after the anchor
   expect(
     sessionCost({ session_id: session, transcript_path: transcript, cost: { total_cost_usd: 0.95 } }),
   ).toBeCloseTo(0.06, 5);
 });
 
-test("sessionCost: /clear (transcript đổi) => reset về 0", () => {
+test("sessionCost: /clear (transcript changed) => back to 0", () => {
   const session = "sess-cost-probe-2";
   const tA = "/tmp/kt-tr-probe-clearA.jsonl";
   const tB = "/tmp/kt-tr-probe-clearB.jsonl";
   const key = createHash("md5").update(session).digest("hex").slice(0, 8);
   writeFileSync(join(tmpdir(), `kt-cost-${key}.json`), "{}");
 
-  sessionCost({ session_id: session, transcript_path: tA, cost: { total_cost_usd: 0.5 } }); // neo 0.5
+  sessionCost({ session_id: session, transcript_path: tA, cost: { total_cost_usd: 0.5 } }); // anchor at 0.5
   expect(
     sessionCost({ session_id: session, transcript_path: tA, cost: { total_cost_usd: 0.7 } }),
   ).toBeCloseTo(0.2, 5);
-  // /clear -> transcript mới, total vẫn tích luỹ 0.7 -> reset về 0
+  // /clear -> new transcript, total still accumulating at 0.7 -> back to 0
   expect(sessionCost({ session_id: session, transcript_path: tB, cost: { total_cost_usd: 0.7 } })).toBe(0);
 });
 
-test("sessionCost: không có cost => undefined (không hiện $)", () => {
+test("sessionCost: no cost => undefined (don't show $)", () => {
   expect(sessionCost({ session_id: "sess-no-cost", transcript_path: "/tmp/x.jsonl" })).toBeUndefined();
 });
 
-test("savedTokens có giá trị => L3 hiện ♻️ ~Xk saved", () => {
+test("savedTokens present => L3 shows ♻️ ~Xk saved", () => {
   const extras: Extras = {
     dir: "/tmp/x", git: null, tools: 3, todos: null, quota: null, plan: null,
     savedTokens: 12_400,
@@ -172,7 +172,7 @@ test("savedTokens có giá trị => L3 hiện ♻️ ~Xk saved", () => {
   expect(l3).toContain("♻️ ~12k saved");
 });
 
-test("savedTokens nhỏ hơn 1000 => hiện số thô; 0/null => ẩn", () => {
+test("savedTokens under 1000 => raw number; 0/null => hidden", () => {
   const base: Extras = { dir: "/tmp/x", git: null, tools: 3, todos: null, quota: null, plan: null };
   const sSmall = renderStatusline(
     { context_window: { used_percentage: 10, context_window_size: 200000 } },
@@ -194,7 +194,7 @@ test("savedTokens nhỏ hơn 1000 => hiện số thô; 0/null => ẩn", () => {
   expect(sNull).not.toContain("saved");
 });
 
-test("collectSavedTokens: đọc index.jsonl của project, quy ra token (chars/4)", () => {
+test("collectSavedTokens: reads the project's index.jsonl, converts to tokens (chars/4)", () => {
   const dir = "/tmp/kt-test-saved-tokens";
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
@@ -209,52 +209,52 @@ test("collectSavedTokens: đọc index.jsonl của project, quy ra token (chars/
   expect(collectSavedTokens(dir)).toBe(2_000); // (4000+4000)/4
 });
 
-test("collectSavedTokens: chưa có dữ liệu => null (auto-hide)", () => {
+test("collectSavedTokens: no data yet => null (auto-hide)", () => {
   const dir = "/tmp/kt-test-saved-tokens-empty";
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   expect(collectSavedTokens(dir)).toBeNull();
 });
 
-test("collectGit trên repo này trả branch", () => {
+test("collectGit returns a branch for this repo", () => {
   const g = collectGit(process.cwd());
   expect(g).not.toBeNull();
   expect(typeof g!.branch).toBe("string");
   expect(g!.branch.length).toBeGreaterThan(0);
 });
 
-test("collectGit: cache trong TTL, recompute ngoài TTL", () => {
+test("collectGit: cached within the TTL, recomputed past it", () => {
   const dir = "/tmp/kt-git-cache-probe-nonrepo";
   const key = createHash("md5").update(dir).digest("hex").slice(0, 8);
   const cachePath = join(tmpdir(), `kt-git-${key}.json`);
   const fake = { branch: "cached-branch", ahead: 0, behind: 0, added: 9, removed: 0 };
   writeFileSync(cachePath, JSON.stringify({ ts: 1000, git: fake }));
 
-  // now=1400 → 400ms < 1500ms TTL → trả cache (không chạy git)
+  // now=1400 → 400ms < the 1500ms TTL → serve the cache (no git run)
   expect(collectGit(dir, 1400)?.branch).toBe("cached-branch");
-  // now=5000 → ngoài TTL → recompute; dir không phải repo → null
+  // now=5000 → past the TTL → recompute; dir isn't a repo → null
   expect(collectGit(dir, 5000)).toBeNull();
 });
 
-test("perTurn => hiện chi phí mỗi lượt kế tiếp trên L1 (context càng phình càng đắt)", () => {
+test("perTurn => shows the cost of each following turn on L1 (a fatter context costs more)", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 30, context_window_size: 1_000_000 }, model: { display_name: "Opus 5" } },
     cfg,
     { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null, perTurn: 0.104 },
   );
-  expect(s.split("\n")[0]).toContain("$0.10/lượt");
+  expect(s.split("\n")[0]).toContain("$0.10/turn");
 });
 
-test("perTurn null/0 => ẩn hẳn, không in $0.00/lượt", () => {
+test("perTurn null/0 => hidden entirely, never prints $0.00/turn", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
     cfg,
     { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null, perTurn: null },
   );
-  expect(s).not.toContain("/lượt");
+  expect(s).not.toContain("/turn");
 });
 
-test("idle >= 60 phút => cảnh báo cache đã hết + giá nạp lại", () => {
+test("idle >= 60 minutes => warns the cache expired + the reload price", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
     cfg,
@@ -265,24 +265,24 @@ test("idle >= 60 phút => cảnh báo cache đã hết + giá nạp lại", () =
   expect(s).toContain("$5.02");
 });
 
-test("idle ngắn => chỉ hiện thời gian, không doạ giá", () => {
+test("short idle => shows the time only, no price scare", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
     cfg,
     { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null,
       idle: { minutes: 25, cacheAlive: true, reloadCost: 5.02 } },
   );
-  expect(s).toContain("25ph");
+  expect(s).toContain("25m");
   expect(s).not.toContain("$5.02");
 });
 
-test("idle dưới ngưỡng => ẩn hẳn (không nhiễu statusline)", () => {
+test("idle below the threshold => hidden entirely (don't clutter the status line)", () => {
   const s = renderStatusline(
     { context_window: { used_percentage: 30, context_window_size: 1_000_000 } },
     cfg,
     { dir: "/tmp", git: null, tools: 0, todos: null, quota: null, plan: null,
       idle: { minutes: 3, cacheAlive: true, reloadCost: 1 } },
   );
-  expect(s).not.toContain("ph ·");
-  expect(s).not.toContain("3ph");
+  expect(s).not.toContain("m ·");
+  expect(s).not.toContain("3m");
 });

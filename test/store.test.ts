@@ -10,7 +10,7 @@ test("save rồi show theo id", () => {
   expect(showRun("001", ROOT)).toBe("full log A");
 });
 
-test("show không id => bản mới nhất; prune theo keep", () => {
+test("show without an id => the newest run; prune honours keep", () => {
   rmSync(ROOT, { recursive: true, force: true });
   saveRun("001", "A", { root: ROOT, keep: 2 });
   saveRun("002", "B", { root: ROOT, keep: 2 });
@@ -19,11 +19,11 @@ test("show không id => bản mới nhất; prune theo keep", () => {
   expect(listRuns(ROOT)).toEqual(["002", "003"]);
 });
 
-test("trùng id => không ghi đè, tạo file hậu tố", () => {
+test("a duplicate id => no overwrite, a suffixed file is created", () => {
   rmSync(ROOT, { recursive: true, force: true });
   saveRun("dup", "first", { root: ROOT });
   saveRun("dup", "second", { root: ROOT });
-  expect(showRun("dup", ROOT)).toBe("first");        // bản gốc còn nguyên
-  expect(showRun("dup-1", ROOT)).toBe("second");     // bản thứ 2 sang hậu tố
+  expect(showRun("dup", ROOT)).toBe("first");        // the original is intact
+  expect(showRun("dup-1", ROOT)).toBe("second");     // the second went to a suffix
   expect(listRuns(ROOT)).toEqual(["dup", "dup-1"]);
 });

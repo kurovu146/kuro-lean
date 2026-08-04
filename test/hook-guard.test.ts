@@ -15,57 +15,57 @@ function setupFiles() {
   writeFileSync(small, "x".repeat(1024)); // 1KB
 }
 
-test("find / không scope => deny + gợi ý", () => {
+test("find / without a scope => deny + a suggestion", () => {
   const r = decideGuard("find / -name foo", g);
   expect(r.deny).toBe(true);
   expect(r.reason).toContain("find");
 });
 
-test("npm ls không depth => deny", () => {
+test("the dependency-tree lister without a depth flag => deny", () => {
   expect(decideGuard("npm ls", g).deny).toBe(true);
 });
 
-test("tree không -L => deny", () => {
+test("tree without -L => deny", () => {
   expect(decideGuard("tree", g).deny).toBe(true);
   expect(decideGuard("cd src && tree", g).deny).toBe(true);
   expect(decideGuard("ls | tree", g).deny).toBe(true);
 });
 
-test("tree có -L => allow", () => {
+test("tree with -L => allow", () => {
   expect(decideGuard("tree -L 2", g).deny).toBe(false);
 });
 
-test('"tree" là đối số/chuỗi => allow (không false-positive)', () => {
+test('"tree" as an argument/string => allow (no false positive)', () => {
   expect(decideGuard('grep -rln "tree" src/', g).deny).toBe(false);
   expect(decideGuard("cat tree-sitter.json", g).deny).toBe(false);
   expect(decideGuard("echo subtree", g).deny).toBe(false);
 });
 
-test("lệnh an toàn => allow", () => {
+test("a safe command => allow", () => {
   expect(decideGuard("ls -la", g).deny).toBe(false);
   expect(decideGuard("find ./src -name '*.ts'", g).deny).toBe(false);
 });
 
-test("catBig: cat file lớn => deny + gợi ý", () => {
+test("catBig: cat on a big file => deny + a suggestion", () => {
   setupFiles();
   const r = decideGuard(`cat ${big}`, g);
   expect(r.deny).toBe(true);
   expect(r.reason).toContain("KB");
 });
 
-test("catBig: cat file nhỏ / file không tồn tại => allow", () => {
+test("catBig: cat on a small or missing file => allow", () => {
   setupFiles();
   expect(decideGuard(`cat ${small}`, g).deny).toBe(false);
   expect(decideGuard(`cat ${DIR}/nope.txt`, g).deny).toBe(false);
 });
 
-test("catBig: head/tail file lớn KHÔNG bị chặn (tự giới hạn dòng)", () => {
+test("catBig: head/tail on a big file is NOT blocked (they limit lines themselves)", () => {
   setupFiles();
   expect(decideGuard(`head -n 50 ${big}`, g).deny).toBe(false);
   expect(decideGuard(`tail ${big}`, g).deny).toBe(false);
 });
 
-test("gitLogP: git log -p/--patch => deny (full patch mọi commit)", () => {
+test("gitLogP: the patch-printing log flags => deny (the full patch of every commit)", () => {
   const r = decideGuard("git log -p", g);
   expect(r.deny).toBe(true);
   expect(r.reason).toContain("git show");
@@ -73,7 +73,7 @@ test("gitLogP: git log -p/--patch => deny (full patch mọi commit)", () => {
   expect(decideGuard("git log -p -- src/a.ts", g).deny).toBe(true);
 });
 
-test("gitLogP: git log thường / -p ở lệnh khác => allow", () => {
+test("gitLogP: a plain log / the flag on another command => allow", () => {
   expect(decideGuard("git log --oneline -20", g).deny).toBe(false);
   expect(decideGuard("git log -5", g).deny).toBe(false);
   expect(decideGuard("grep -p foo src/", g).deny).toBe(false);

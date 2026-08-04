@@ -20,7 +20,7 @@ export interface GenericOpts {
 
 export type Compressor = (input: CompressInput, opts?: GenericOpts) => CompressResult;
 
-/** Gộp stdout + stderr, bỏ newline thừa cuối từng phần. */
+/** Merge stdout + stderr, dropping the trailing newline of each part. */
 export function joinOutput(i: CompressInput): string {
   return [i.stdout, i.stderr]
     .map((s) => s.replace(/\n+$/, ""))
@@ -33,19 +33,19 @@ export function countLines(s: string): number {
 }
 
 /**
- * Trần ký tự tuyệt đối, áp SAU mọi compressor — chốt chặn cho các ca lọt lưới đếm-dòng
- * (1 dòng JSON/minified khổng lồ, test fail giữ nguyên khối). Giữ đầu (65%) + cuối,
- * phần giữa thay bằng marker trỏ tới `kt show`. maxChars <= 0 nghĩa là tắt cap.
+ * The hard character cap, applied AFTER every compressor — the backstop for cases that slip past
+ * line counting (one giant minified/JSON line, a failing test kept whole). Keeps the head (65%) and
+ * the tail, replacing the middle with a marker pointing at `kt show`. maxChars <= 0 disables the cap.
  */
 export function capChars(text: string, maxChars: number): string {
   if (maxChars <= 0 || text.length <= maxChars) return text;
   let head = Math.floor(maxChars * 0.65);
-  // không cắt giữa surrogate pair (emoji/ký tự astral) → lùi/tiến 1 đơn vị
+  // never cut inside a surrogate pair (emoji/astral characters) → step back/forward one unit
   const c = text.charCodeAt(head - 1);
   if (c >= 0xd800 && c <= 0xdbff) head -= 1;
   let cutStart = text.length - (maxChars - head);
   const t = text.charCodeAt(cutStart);
   if (t >= 0xdc00 && t <= 0xdfff) cutStart += 1;
   const hiddenKb = Math.round((cutStart - head) / 1024);
-  return `${text.slice(0, head)}\n… [đã cắt ~${hiddenKb}KB — kt show] …\n${text.slice(cutStart)}`;
+  return `${text.slice(0, head)}\n… [~${hiddenKb}KB trimmed — kt show] …\n${text.slice(cutStart)}`;
 }

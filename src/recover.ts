@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 
-// Cắt ngắn phần ồn: tool_result và input của tool là thứ làm transcript phình lên hàng MB,
-// nhưng phiên sau chỉ cần biết đã đụng gì, không cần nguyên văn.
+// Trim the noise: tool_result and tool input are what inflate a transcript to megabytes,
+// while the next session only needs to know what was touched, not the verbatim text.
 const RESULT_CAP = 200;
 const TOOL_INPUT_CAP = 200;
 const TEXT_CAP = 800;
@@ -12,9 +12,9 @@ function clip(s: string, n: number): string {
 }
 
 /**
- * Trích phần CUỐI transcript thành văn bản gọn (PURE).
- * Bỏ thinking (không lưu được, và phiên sau không cần), cắt tool_result/tool input.
- * Đo trên phiên thật: 60 message cuối ≈ 0,1% kích thước transcript mà vẫn đủ ngữ cảnh.
+ * Extract the END of a transcript into compact text (PURE).
+ * Drops thinking (can't be replayed, and the next session doesn't need it), clips tool_result/tool input.
+ * Measured on a real session: the last 60 messages ≈ 0.1% of the transcript size and still enough context.
  */
 export function extractTail(lines: string[], nMessages: number): string {
   const out: string[] = [];
@@ -24,7 +24,7 @@ export function extractTail(lines: string[], nMessages: number): string {
     try {
       e = JSON.parse(line);
     } catch {
-      continue; // dòng hỏng → bỏ, đừng làm chết cả bản trích
+      continue; // a corrupt line → skip it, don't kill the whole extract
     }
     const m = e?.message;
     const role = m?.role;
@@ -40,15 +40,15 @@ export function extractTail(lines: string[], nMessages: number): string {
         if (it.type === "text") {
           parts.push(clip(it.text ?? "", TEXT_CAP));
         } else if (it.type === "tool_use") {
-          parts.push(`[dùng ${it.name}: ${clip(JSON.stringify(it.input ?? {}), TOOL_INPUT_CAP)}]`);
+          parts.push(`[used ${it.name}: ${clip(JSON.stringify(it.input ?? {}), TOOL_INPUT_CAP)}]`);
         } else if (it.type === "tool_result") {
           const cc = it.content;
           const s = Array.isArray(cc)
             ? cc.map((x: any) => (x && typeof x === "object" ? x.text ?? "" : "")).join("")
             : String(cc ?? "");
-          parts.push(`[kết quả: ${clip(s, RESULT_CAP)}]`);
+          parts.push(`[result: ${clip(s, RESULT_CAP)}]`);
         }
-        // thinking: bỏ hẳn
+        // thinking: dropped entirely
       }
     }
     const body = parts.filter((p) => p.trim()).join("\n");
@@ -57,7 +57,7 @@ export function extractTail(lines: string[], nMessages: number): string {
   return out.join("\n\n");
 }
 
-/** Transcript được ghi gần nhất trong thư mục phiên của một project. null nếu không có. */
+/** The most recently written transcript in a project's session directory. null when there is none. */
 export function latestTranscript(dir: string): string | null {
   if (!existsSync(dir)) return null;
   let best: { path: string; mtime: number } | null = null;
@@ -76,11 +76,11 @@ export function latestTranscript(dir: string): string | null {
   return best?.path ?? null;
 }
 
-/** Bản trích kèm hướng dẫn, sẵn để dán vào phiên mới. */
+/** The extract plus instructions, ready to paste into a new session. */
 export function recoverPrompt(tail: string, sourceFile: string): string {
-  if (!tail) return `(không đọc được nội dung dùng được từ ${sourceFile})\n`;
-  return `Đây là phần cuối của phiên làm việc trước (trích từ \`${sourceFile}\`, đã lược bớt output dài).
-Đọc để nắm trạng thái, tóm tắt lại cho tôi đang dở ở đâu và bước tiếp theo là gì, rồi chờ tôi xác nhận trước khi làm gì.
+  if (!tail) return `(no usable content could be read from ${sourceFile})\n`;
+  return `This is the tail of a previous working session (extracted from \`${sourceFile}\`, with long output trimmed).
+Read it to pick up the state, summarise for me where things stand and what the next step is, then wait for my confirmation before doing anything.
 
 ---
 

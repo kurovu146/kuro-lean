@@ -14,7 +14,7 @@ export function compress(profile: Profile, input: CompressInput, config: Config)
     switch (useProfile) {
       case "test": result = compressTest(input); break;
       case "build": result = compressBuild(input); break;
-      case "lint": result = compressBuild(input); break; // linter cũng chỉ cần giữ error/warning
+      case "lint": result = compressBuild(input); break; // a linter likewise only needs errors/warnings kept
       case "install": result = compressInstall(input); break;
       case "git": result = compressGit(input, config.generic); break;
       default: result = generic(input, config.generic);
@@ -23,7 +23,7 @@ export function compress(profile: Profile, input: CompressInput, config: Config)
     const raw = joinOutput(input);
     result = { text: raw, originalLines: countLines(raw), compactLines: countLines(raw), note: "compressor-error-fallback" };
   }
-  // trần ký tự tuyệt đối — áp cả cho fallback, vá lỗ "1 dòng khổng lồ" / "fail giữ tất cả"
+  // The hard character cap — applied to the fallback too, closing the "one giant line" / "a failure keeps everything" holes
   const capped = capChars(result.text, config.limits.maxChars);
   if (capped !== result.text) {
     result = { ...result, text: capped, compactLines: countLines(capped), note: result.note ? `${result.note}+char-cap` : "char-cap" };

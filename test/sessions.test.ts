@@ -7,7 +7,7 @@ import { defaultConfig } from "../src/config";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-sessions-"));
 
-/** Dựng một transcript giả: dòng meta (cwd/branch) + dòng usage, rồi lùi mtime. */
+/** Build a fake transcript: a meta line (cwd/branch) + a usage line, then backdate the mtime. */
 function fakeSession(
   root: string,
   slug: string,
@@ -28,7 +28,7 @@ function fakeSession(
   return p;
 }
 
-test("liệt kê phiên toàn máy: mới nhất lên đầu, kèm repo/branch/token của lượt cuối", () => {
+test("lists sessions machine-wide: newest first, with the repo/branch/tokens of the last turn", () => {
   const root = tmp();
   fakeSession(root, "-Users-kuro-Dev-mot", "a.jsonl", {
     cwd: "/Users/kuro/Dev/mot", branch: "main", tokens: 96_000, idleMin: 10, pad: 3000,
@@ -40,7 +40,7 @@ test("liệt kê phiên toàn máy: mới nhất lên đầu, kèm repo/branch/t
   const rows = listSessions(root, { minBytes: 1000, limit: 10 });
 
   expect(rows.length).toBe(2);
-  // cwd đọc từ trong transcript, không suy từ tên thư mục — "kuro-lean" không đoán ngược được
+  // cwd is read from inside the transcript, not inferred from the directory name - "kuro-lean" cannot be decoded back
   expect(rows[0]!.cwd).toBe("/Users/kuro/Dev/mot");
   expect(rows[0]!.branch).toBe("main");
   expect(rows[0]!.tokens).toBe(96_000);
@@ -49,12 +49,12 @@ test("liệt kê phiên toàn máy: mới nhất lên đầu, kèm repo/branch/t
   expect(rows[1]!.tokens).toBe(263_000);
 });
 
-test("bỏ qua phiên quá ngắn: không có gì để cứu thì đừng chen vào danh sách", () => {
+test("skips sessions that are too short: nothing to rescue means nothing in the list", () => {
   const root = tmp();
   fakeSession(root, "-Users-kuro-Dev-mot", "co-viec.jsonl", {
     cwd: "/Users/kuro/Dev/mot", branch: "main", tokens: 96_000, idleMin: 60, pad: 3000,
   });
-  // phiên vừa mở gõ đúng một câu — mới nhất, nhưng rỗng tuếch
+  // a session just opened with one line typed - newest, but empty
   fakeSession(root, "-Users-kuro-Dev-mot", "vua-mo.jsonl", {
     cwd: "/Users/kuro/Dev/mot", branch: "main", tokens: 900, idleMin: 0,
   });
@@ -65,48 +65,48 @@ test("bỏ qua phiên quá ngắn: không có gì để cứu thì đừng chen 
   expect(rows[0]!.path).toContain("co-viec.jsonl");
 });
 
-// ---- bảng để chọn ----
+// ---- the table to choose from ----
 
 const rows = [
   { path: "/p/a.jsonl", cwd: "/Users/kuro/Dev/fb-auto-post", branch: "main", idleMinutes: 2, tokens: 263_000, model: "claude-opus-5", bytes: 2e6 },
   { path: "/p/b.jsonl", cwd: "/Users/kuro/Dev/kuro-lean", branch: "dev", idleMinutes: 312, tokens: 178_000, model: "claude-opus-5", bytes: 9e5 },
 ];
 
-test("bảng phiên: đánh số, giữ nguyên tên repo có dấu gạch, kèm giá nạp lại", () => {
+test("session table: numbered, repo names with dashes preserved, with the reload price", () => {
   const out = renderSessions(rows, defaultConfig.pricing);
 
   expect(out).toContain("1");
-  expect(out).toContain("~/Dev/fb-auto-post (main)"); // KHÔNG được thành fb/auto/post
+  expect(out).toContain("~/Dev/fb-auto-post (main)"); // must NOT become fb/auto/post
   expect(out).toContain("263k tok");
   expect(out).toContain("$2.63"); // 263k × $5/1M × 2 (cache write)
-  expect(out).toContain("5h12"); // 312 phút
+  expect(out).toContain("5h12"); // 312 minutes
 });
 
-test("--from nhận số thứ tự trong bảng", () => {
+test("--from accepts a row number from the table", () => {
   expect(resolveFrom(rows, "2")).toBe("/p/b.jsonl");
 });
 
-test("--from nhận thẳng đường dẫn, khỏi phải tra bảng", () => {
+test("--from accepts a path outright, no table lookup needed", () => {
   expect(resolveFrom(rows, "/noi/khac/c.jsonl")).toBe("/noi/khac/c.jsonl");
 });
 
-test("--from trỏ ra ngoài bảng => null, đừng đoán bừa một phiên", () => {
+test("--from pointing outside the table => null, never guess at a session", () => {
   expect(resolveFrom(rows, "9")).toBeNull();
 });
 
-// ---- đọc cờ dòng lệnh ----
+// ---- command-line flags ----
 
-test("kt handoff không cờ => vẫn là prompt chốt phiên như cũ", () => {
+test("kt handoff with no flags => still the session-closing prompt as before", () => {
   expect(parseHandoffArgs([])).toEqual({ mode: "prompt", file: ".kt/handoff.md", copy: false });
   expect(parseHandoffArgs(["ghi-chu.md"])).toEqual({ mode: "prompt", file: "ghi-chu.md", copy: false });
 });
 
-test("kt handoff --list [N] => liệt kê, N là số dòng", () => {
+test("kt handoff --list [N] => lists them, N is the row count", () => {
   expect(parseHandoffArgs(["--list"])).toEqual({ mode: "list", limit: 10 });
   expect(parseHandoffArgs(["--list", "20"])).toEqual({ mode: "list", limit: 20 });
 });
 
-test("kt handoff --recover [N] --from X => giữ N cũ, thêm chỗ chỉ phiên", () => {
+test("kt handoff --recover [N] --from X => keeps the old N, adds a way to point at a session", () => {
   expect(parseHandoffArgs(["--recover"])).toEqual({ mode: "recover", n: 60, from: null, copy: false });
   expect(parseHandoffArgs(["--recover", "30"])).toEqual({ mode: "recover", n: 30, from: null, copy: false });
   expect(parseHandoffArgs(["--recover", "--from", "2"])).toEqual({ mode: "recover", n: 60, from: "2", copy: false });
@@ -115,7 +115,7 @@ test("kt handoff --recover [N] --from X => giữ N cũ, thêm chỗ chỉ phiên
   });
 });
 
-test("không đọc được usage => hiện '?', đừng hiện 0k làm anh tưởng phiên rỗng", () => {
+test("usage unreadable => shows '?', never 0k which would look like an empty session", () => {
   const out = renderSessions(
     [{ path: "/p/c.jsonl", cwd: "/Users/kuro/Dev/mot", branch: "main", idleMinutes: 133, tokens: 0, model: "", bytes: 5e5 }],
     defaultConfig.pricing,
@@ -124,16 +124,16 @@ test("không đọc được usage => hiện '?', đừng hiện 0k làm anh tư
   expect(out).not.toContain("0k tok");
 });
 
-// ---- --copy: dán thẳng vào clipboard, khỏi phải đi tìm file ----
+// ---- --copy: straight to the clipboard, no hunting for a file ----
 
-test("--copy nhận ở mọi dạng lệnh, và không bị đọc nhầm thành tên file", () => {
+test("--copy is accepted in every form, and is never read as a filename", () => {
   expect(parseHandoffArgs(["--copy"])).toEqual({ mode: "prompt", file: ".kt/handoff.md", copy: true });
   expect(parseHandoffArgs(["--recover", "--from", "3", "--copy"])).toEqual({
     mode: "recover", n: 60, from: "3", copy: true,
   });
 });
 
-test("clipboard: mỗi hệ điều hành một lệnh, không đoán bừa lệnh không có", () => {
+test("clipboard: one command per platform, never guessing at one that does not exist", () => {
   expect(clipboardCommand("darwin")).toEqual({ cmd: "pbcopy", args: [] });
   expect(clipboardCommand("win32")).toEqual({ cmd: "clip", args: [] });
   expect(clipboardCommand("linux")).toEqual({ cmd: "xclip", args: ["-selection", "clipboard"] });

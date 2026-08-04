@@ -7,10 +7,10 @@ test("profile tắt => generic", () => {
   const cfg = { ...defaultConfig, profiles: { ...defaultConfig.profiles, test: false } };
   const input: CompressInput = { stdout: "a\nb", stderr: "", exitCode: 0, command: "npm test" };
   const r = compress("test", input, cfg);
-  expect(r.text).toBe("a\nb"); // generic dưới ngưỡng giữ nguyên
+  expect(r.text).toBe("a\nb"); // generic below the threshold is untouched
 });
 
-test("route đúng compressor: build có error => giữ dòng error", () => {
+test("routes to the right compressor: a build with an error => keep the error line", () => {
   const input: CompressInput = {
     stdout: "noise\nsrc/a.ts(3,5): error TS2304: Cannot find name 'x'.\nnoise",
     stderr: "", exitCode: 2, command: "tsc -p .",

@@ -1,36 +1,37 @@
 /**
- * Prompt chưng cất trạng thái phiên ra file, để phiên sau bắt đầu từ ~5k token
- * thay vì vác cả context cũ. Rẻ hơn resume hàng chục lần và context sau đó cũng nhẹ.
+ * A prompt that distils the session state into a file, so the next session starts at ~5k tokens
+ * instead of hauling the old context along. Many times cheaper than resuming, and every later
+ * turn stays light too.
  */
 export function handoffPrompt(file: string): string {
-  return `Ghi trạng thái phiên này ra \`${file}\` để phiên sau tiếp tục được mà KHÔNG cần đọc lại lịch sử.
+  return `Write the state of this session to \`${file}\` so the next session can continue WITHOUT re-reading the history.
 
-Theo đúng khung này:
+Follow this exact structure:
 
-## Đang làm
-Mục tiêu của phiên, và phần nào đã chạm tới.
+## In progress
+The goal of this session, and how far it got.
 
-## Đã xong
-Việc đã hoàn tất + commit/branch tương ứng (nếu có). Ghi rõ cái gì đã verify, verify bằng cách nào.
+## Done
+Completed work + the matching commit/branch (if any). State what was verified, and how.
 
-## Quyết định và lý do
-Chỉ những quyết định mà đọc code không suy ra được — vì sao chọn hướng này thay vì hướng kia,
-phương án nào đã thử và hỏng.
+## Decisions and why
+Only decisions that can't be inferred from the code — why this direction over the alternative,
+what was tried and failed.
 
-## Đang dở / Bước tiếp theo
-Việc cụ thể tiếp theo phải làm, đủ chi tiết để bắt tay vào ngay.
+## Unfinished / Next step
+The specific next task, detailed enough to start on immediately.
 
-## File đang đụng
-Đường dẫn + số dòng nếu cần. KHÔNG chép nội dung file vào đây.
+## Files being touched
+Paths + line numbers where useful. Do NOT copy file contents in here.
 
-## Cạm bẫy đã gặp
-Thứ đã mất thời gian mà lần sau dễ vấp lại.
+## Traps hit
+Things that cost time and are easy to walk into again.
 
-Quy tắc:
-- KHÔNG chép lại code, diff, hay output lệnh — chỉ đường dẫn và số dòng.
-- KHÔNG viết lại thứ đã có trong git log, README, hay comment trong code.
-- Bỏ hẳn mục nào không có nội dung, đừng ghi "không có".
-- Viết cho chính mình đọc sau vài ngày: đủ để hành động, không phải báo cáo.
+Rules:
+- Do NOT copy code, diffs, or command output — paths and line numbers only.
+- Do NOT restate what's already in the git log, the README, or code comments.
+- Drop any section with nothing in it; don't write "none".
+- Write it for yourself a few days from now: enough to act on, not a status report.
 
-Ghi xong thì nói cho tôi đường dẫn và số dòng của file, không tóm tắt lại nội dung.`;
+When it's written, tell me the path and line count, don't summarise the contents back to me.`;
 }

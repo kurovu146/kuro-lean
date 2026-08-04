@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { compressBuild } from "../src/compressors/build";
 import type { CompressInput } from "../src/compressors/types";
 
-test("build OK => 1 dòng", () => {
+test("build OK => one line", () => {
   const input: CompressInput = {
     stdout: "compiling...\nlinking...\nwrote dist/index.js\ndone in 2s",
     stderr: "", exitCode: 0, command: "tsc -p .",
@@ -12,7 +12,7 @@ test("build OK => 1 dòng", () => {
   expect(r.text).toContain("OK");
 });
 
-test("có error => giữ dòng error", () => {
+test("has an error => keep the error line", () => {
   const input: CompressInput = {
     stdout: "compiling...\nsrc/a.ts(3,5): error TS2304: Cannot find name 'x'.\nmore noise\nmore noise",
     stderr: "", exitCode: 2, command: "tsc -p .",

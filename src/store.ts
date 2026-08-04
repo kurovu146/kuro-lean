@@ -11,14 +11,14 @@ export interface RunMeta {
   compactChars: number;
 }
 
-// index.jsonl chỉ để thống kê — trim định kỳ cho khỏi phình vô hạn.
+// index.jsonl exists only for statistics — trimmed periodically so it can't grow forever.
 const META_MAX_LINES = 2000;
 const META_KEEP_LINES = 1000;
 
 /**
- * Ghi 1 dòng metadata cho run vào <root>/index.jsonl (nguồn dữ liệu của `kt stats`).
- * Best-effort: bước trim là read-modify-write không atomic — 2 kt run song song có thể
- * làm rơi vài dòng thống kê. Chấp nhận được vì đây chỉ là số liệu, không phải log gốc.
+ * Append one metadata line for a run to <root>/index.jsonl (the data source for `kt stats`).
+ * Best-effort: the trim step is a non-atomic read-modify-write — two concurrent kt runs can drop a few
+ * statistics lines. Acceptable, because these are only numbers, not the original logs.
  */
 export function appendMeta(
   entry: RunMeta,
@@ -35,7 +35,7 @@ export function appendMeta(
   }
 }
 
-/** Đọc toàn bộ metadata; dòng hỏng bị bỏ qua. */
+/** Read all metadata; corrupt lines are skipped. */
 export function readMeta(root: string = DEFAULT_ROOT): RunMeta[] {
   const path = join(root, "index.jsonl");
   if (!existsSync(path)) return [];
@@ -44,12 +44,12 @@ export function readMeta(root: string = DEFAULT_ROOT): RunMeta[] {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
-      // field số phải là số thật — 1 entry lệch shape (schema drift/ghi dở) sẽ làm cả stats thành NaN
+      // numeric fields must really be numbers — one misshapen entry (schema drift/partial write) turns all stats into NaN
       if (e && typeof e.id === "string" && Number.isFinite(e.originalChars) && Number.isFinite(e.compactChars)) {
         out.push(e);
       }
     } catch {
-      // dòng hỏng → bỏ
+      // corrupt line → skip
     }
   }
   return out;
@@ -66,7 +66,7 @@ export function listRuns(root: string = DEFAULT_ROOT): string[] {
 export function saveRun(id: string, content: string, opts: { keep?: number; root?: string } = {}): string {
   const root = opts.root ?? DEFAULT_ROOT;
   mkdirSync(root, { recursive: true });
-  // chống trùng id (2 run cùng timestamp-ms) → thêm hậu tố thay vì ghi đè
+  // guard against duplicate ids (two runs in the same millisecond) → add a suffix rather than overwrite
   let path = join(root, `${id}.log`);
   for (let n = 1; existsSync(path); n++) path = join(root, `${id}-${n}.log`);
   writeFileSync(path, content);

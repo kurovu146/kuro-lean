@@ -26,19 +26,19 @@ test.each([
   ["/proj/src/index.ts"],
   ["/proj/README.md"],
   ["/proj/src/components/Button.tsx"],
-])("cho qua file code thường: %s", (file_path) => {
+])("allows an ordinary code file: %s", (file_path) => {
   expect(checkNoisyRead({ file_path }, CFG)).toBeNull();
 });
 
-test("cửa thoát: có offset => cho đọc đoạn lock file", () => {
+test("escape hatch: an offset => allow reading a slice of a lock file", () => {
   expect(checkNoisyRead({ file_path: "/proj/package-lock.json", offset: 100 }, CFG)).toBeNull();
 });
 
-test("cửa thoát: limit nhỏ (≤400) => cho qua", () => {
+test("escape hatch: a small limit (<=400) => allow", () => {
   expect(checkNoisyRead({ file_path: "/proj/yarn.lock", limit: 50 }, CFG)).toBeNull();
 });
 
-test("limit LỚN (>400) không phải cửa thoát => vẫn deny", () => {
+test("a LARGE limit (>400) is not an escape hatch => still deny", () => {
   expect(checkNoisyRead({ file_path: "/proj/yarn.lock", limit: 1000 }, CFG)).not.toBeNull();
 });
 
@@ -47,11 +47,11 @@ test("rule tắt (readNoise=false) => null", () => {
   expect(checkNoisyRead({ file_path: "/proj/package-lock.json" }, off)).toBeNull();
 });
 
-test("thiếu file_path => null (không crash)", () => {
+test("missing file_path => null (no crash)", () => {
   expect(checkNoisyRead({}, CFG)).toBeNull();
 });
 
-test("file lớn (> maxReadKb) dù không khớp pattern => deny", () => {
+test("a large file (> maxReadKb) even without a pattern match => deny", () => {
   const dir = "/tmp/kt-test-guard-read";
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });

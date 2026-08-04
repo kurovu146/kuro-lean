@@ -10,12 +10,12 @@ test.each([
   ["cargo build --release", "build"],
   ["tsc -p .", "build"],
   ["next build", "build"],
-  // package-manager script (dạng phổ biến nhất trong thực tế) phải được nhận diện
+  // a package-manager script (the most common form in practice) must be recognised
   ["npm run build", "build"],
   ["pnpm build", "build"],
   ["yarn build", "build"],
   ["bun run build", "build"],
-  // linter: output error/warning noisy → profile lint (nén kiểu build)
+  // linter: noisy error/warning output -> the lint profile (compressed like a build)
   ["eslint .", "lint"],
   ["npx eslint src --max-warnings 0", "lint"],
   ["golangci-lint run", "lint"],
@@ -26,7 +26,7 @@ test.each([
   ["bun install", "install"],
   ["yarn add zod", "install"],
   ["yarn install", "install"],
-  // yarn <khác> KHÔNG được nhận nhầm là install (tránh wrap dev server → treo)
+  // yarn <other> must NOT be mistaken for install (avoids wrapping a dev server -> hang)
   ["yarn dev", "generic"],
   ["yarn start", "generic"],
   ["git status", "git"],
