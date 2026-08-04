@@ -1,48 +1,50 @@
 ---
 name: lean-code
-description: Viết ÍT hơn khi implement — leo "thang hiệu quả" trước khi viết (YAGNI → tái dùng → stdlib → dep có sẵn → một dòng → minimum), và áp cùng kỷ luật đó cho TÀI LIỆU, thứ chiếm phần lớn chữ viết ra. Dùng cho mọi task viết/sửa code. KHÔNG BAO GIỜ cắt validation, error handling, security, accessibility.
+description: Write LESS when implementing — climb the "efficiency ladder" before writing (YAGNI → reuse → stdlib → existing dep → one line → minimum), and apply the same discipline to DOCUMENTATION, which is most of the text produced. For every code-writing task. NEVER cut validation, error handling, security, or accessibility.
 ---
 
 # Lean Code
 
-Trước khi viết code, dừng ở nấc ĐẦU TIÊN thỏa:
+Before writing code, stop at the FIRST rung that satisfies:
 
-1. Có cần tồn tại không? Không → đừng viết (YAGNI).
-2. Codebase đã có helper/pattern làm việc này? → tái dùng.
-3. Stdlib làm được? → dùng stdlib.
-4. Platform có sẵn tính năng native? → dùng nó.
-5. Dependency ĐÃ CÀI làm được? → dùng nó (không thêm dep mới).
-6. Một dòng đủ? → viết một dòng.
-7. Chỉ khi đó: viết minimum code chạy được.
+1. Does it need to exist at all? No → don't write it (YAGNI).
+2. Does the codebase already have a helper/pattern for this? → reuse it.
+3. Can the stdlib do it? → use the stdlib.
+4. Does the platform have it natively? → use that.
+5. Can an ALREADY INSTALLED dependency do it? → use it (don't add a new dep).
+6. Is one line enough? → write one line.
+7. Only then: write the minimum working code.
 
-## Tài liệu cũng tính
+## Documentation counts too
 
-Đo thật: **60% chữ ghi ra bằng `Write` là `.md`**, không phải code — plan, spec, báo cáo; file
-lớn nhất tới 112k ký tự. Thang trên áp cho tài liệu y hệt:
+Measured: **60% of the text written through `Write` is `.md`**, not code — plans, specs, reports; the
+largest file reached 112k characters. The ladder above applies to documentation identically:
 
-- Tài liệu dài không làm kế hoạch tốt hơn. Viết đủ để thực thi được, rồi dừng.
-- Không dựng section rỗng cho đủ khuôn mẫu ("Rủi ro: không có", "Phụ lục: N/A") — bỏ hẳn mục đó.
-- Không chép lại vào tài liệu thứ đã có trong code, trong issue, hay trong đoạn hội thoại ngay trên.
-- Một bảng thay được ba đoạn văn thì dùng bảng.
-- Tài liệu tạm (plan/spec cho một task) sống ngắn — đừng đánh bóng nó như tài liệu sản phẩm.
+- A longer document doesn't make a better plan. Write enough to act on, then stop.
+- Don't erect empty sections to fill a template ("Risks: none", "Appendix: N/A") — drop the section.
+- Don't copy into a document what already exists in the code, the issue, or the conversation just above.
+- If one table replaces three paragraphs, use the table.
+- Scratch documents (a plan/spec for one task) are short-lived — don't polish them like product docs.
 
-## Chọn đúng công cụ ghi
+## Pick the right writing tool
 
-- Sửa file đã có → `Edit`, đừng `Write` lại cả file. (Trung vị một `Edit` là 633 ký tự,
-  một `Write` là 3.028 — ghi đè cả file để đổi vài dòng đắt gấp ~5 lần và dễ mất nội dung khác.)
-- Đừng viết file bằng heredoc trong `Bash` khi `Write`/`Edit` làm được — heredoc đang chiếm
-  35% ký tự của các lệnh Bash, và nó không có kiểm tra ghi đè.
+- Changing an existing file → `Edit`, don't `Write` the whole file back. (The median `Edit` is 633
+  characters, the median `Write` 3,028 — overwriting a whole file to change a few lines costs ~5×
+  as much and risks losing other content.)
+- Don't write files with a heredoc in `Bash` when `Write`/`Edit` would do — heredocs currently make up
+  35% of the characters in Bash commands, and they carry no overwrite check.
 
 ## Hard rules
 
-- KHÔNG abstraction/option/config không ai xin. KHÔNG boilerplate thừa.
-- Xoá hơn thêm. Nhàm chán hơn thông minh. Ít file nhất có thể.
-- Yêu cầu phức tạp → hỏi lại: "có thật cần X không, hay Y đủ?"
-- Fix bug ở root cause (hàm chung), không vá từng caller.
-- Chỗ CỐ Ý làm đơn giản → đánh dấu `// kt: <giới hạn> — nâng khi <điều kiện>`.
-- Comment chỉ để nói ràng buộc mà code không tự nói được — không thuật lại dòng kế tiếp.
+- NO abstraction/option/config nobody asked for. NO surplus boilerplate.
+- Deleting beats adding. Boring beats clever. As few files as possible.
+- Complicated request → ask back: "is X really needed, or is Y enough?"
+- Fix bugs at the root cause (the shared function), don't patch each caller.
+- Where simplicity is DELIBERATE → mark it `// kt: <limitation> — revisit when <condition>`.
+- Comments only state constraints the code can't state itself — never narrate the next line.
 
-KHÔNG BAO GIỜ lười với: hiểu đúng vấn đề trước khi code, validation ở trust boundary, error
-handling chống mất dữ liệu, security, accessibility, feature được yêu cầu rõ.
+NEVER be lazy about: understanding the problem before coding, validation at trust boundaries, error
+handling that prevents data loss, security, accessibility, or an explicitly requested feature.
 
-Mỗi implementation không-tầm-thường kèm ĐÚNG MỘT check chạy được (test nhỏ nhất fail khi logic sai).
+Every non-trivial implementation ships with EXACTLY ONE runnable check (the smallest test that fails
+when the logic is wrong).

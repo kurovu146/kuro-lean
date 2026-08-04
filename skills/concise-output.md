@@ -1,46 +1,46 @@
 ---
 name: concise-output
-description: Cắt phần thừa trong câu trả lời dài (văn xuôi kể lể, tóm tắt lặp, code dán lại) mà không làm mất tính chính xác hay dễ đọc. Dùng cho phiên pair-programming để giảm output token.
+description: Cut the padding out of long answers (narrated prose, repeated summaries, re-pasted code) without losing accuracy or readability. For pair-programming sessions, to reduce output tokens.
 ---
 
 # Concise Output
 
-## Nhắm vào đâu
+## What to aim at
 
-Đo trên ~17k block text thật: **trung vị chỉ 102 ký tự** — câu trả lời ngắn vốn đã ổn.
-Nhưng **41% tổng chữ nằm ở 2,7% số câu trả lời** (những block >3k ký tự). Trong nhóm dài đó,
-code fence chỉ chiếm 7% và bảng 5,6% — **87% là văn xuôi**.
+Measured across ~17k real text blocks: **the median is only 102 characters** — short answers are
+already fine. But **41% of all text sits in 2.7% of the answers** (blocks over 3k chars). Inside that
+long group, code fences are only 7% and tables 5.6% — **87% is prose**.
 
-Nên: đừng tốn công cắt "Let me…" ở câu hai dòng. **Toàn bộ giá trị nằm ở việc không để câu trả lời
-dài phình ra.** Trước khi gửi một câu trả lời quá ~15 dòng, rà lại nó một lượt.
+So: don't spend effort trimming "Let me…" off a two-line reply. **All the value is in not letting
+long answers bloat.** Before sending an answer longer than ~15 lines, take one pass back over it.
 
-## Cắt gì trong câu trả lời dài
+## What to cut from a long answer
 
-| Cắt | Vì sao |
+| Cut | Why |
 |---|---|
-| Kể lại quá trình ("em đã mở file X, thấy Y, rồi chạy Z…") | Người dùng đã thấy tool call cuộn qua |
-| Dán lại code vừa `Write`/`Edit` | Diff đã hiện rồi — chỉ trích dòng đang bàn |
-| Liệt kê lại từng file đã sửa | Nói số lượng + cái đáng chú ý |
-| Đoạn tóm tắt cuối lặp lại nội dung ngay phía trên | Kết luận đặt ở ĐẦU, không lặp ở cuối |
-| Giải thích thứ hiển nhiên với người đọc code | Giữ lại phần chỉ mình bạn biết |
-| Nêu phương án rồi nói ngay là sẽ không dùng | Chỉ đưa khuyến nghị |
-| Rào đón, xin lỗi, tự phê bình | Nói thẳng cái đã xảy ra |
+| Narrating the process ("I opened file X, saw Y, then ran Z…") | The user watched the tool calls scroll past |
+| Re-pasting code you just `Write`/`Edit`-ed | The diff already showed — quote only the line under discussion |
+| Re-listing every file touched | Give the count plus whatever is notable |
+| A closing summary repeating what's directly above | Put the conclusion FIRST, don't repeat it at the end |
+| Explaining what's obvious to someone reading the code | Keep only what only you know |
+| Raising an option then immediately dismissing it | Just give the recommendation |
+| Hedging, apologising, self-criticism | State plainly what happened |
 
-## Giữ nguyên, đừng cắt
+## Keep — don't cut
 
-- **Kết luận và con số** — nhất là số đo, kết quả test, cảnh báo, đánh đổi.
-- **Lý do của quyết định** không đọc ra được từ code.
-- **Điều bạn không chắc**, và chắc tới đâu.
-- **Câu cú đầy đủ.** Cách rút ngắn là bỏ bớt ý không đổi quyết định của người đọc, KHÔNG phải nén
-  chữ thành mảnh vụn, viết tắt, hay chuỗi mũi tên `A → B → hỏng`. Người đọc phải hỏi lại là mất
-  sạch phần tiết kiệm.
-- **Bảng khi so sánh nhiều chiều** — bảng ngắn hơn cùng nội dung viết thành đoạn.
+- **Conclusions and numbers** — especially measurements, test results, warnings, trade-offs.
+- **The reasoning behind a decision** that can't be read off the code.
+- **What you're unsure about**, and how unsure.
+- **Whole sentences.** Shortening means dropping points that don't change the reader's decision, NOT
+  compressing words into fragments, abbreviations, or arrow chains like `A → B → broken`. If the
+  reader has to ask again, the saving is gone.
+- **Tables when comparing several dimensions** — a table is shorter than the same content as prose.
 
-## Kiểm nhanh trước khi gửi
+## Quick check before sending
 
-1. Câu đầu có trả lời thẳng câu hỏi không, hay còn đang dẫn nhập?
-2. Có đoạn nào nói lại thứ ngay phía trên đã nói không?
-3. Có đoạn nào người đọc bỏ qua cũng không quyết định khác đi không? → bỏ.
-4. Câu hỏi đơn giản thì trả lời bằng văn xuôi thẳng — đừng dựng heading và mục lục.
+1. Does the first sentence answer the question, or is it still warming up?
+2. Is any passage restating what was just said above?
+3. Would the reader decide differently if a passage were removed? If not → remove it.
+4. A simple question deserves plain prose — don't build headings and a table of contents for it.
 
-Đây KHÔNG phải lối viết cộc lốc. Dễ đọc quan trọng hơn ngắn; khi phải chọn, chọn dễ đọc.
+This is NOT terse writing. Readability beats brevity; when the two conflict, choose readability.
