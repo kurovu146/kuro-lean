@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { CACHE_WRITE_MULT, priceOf, type PricingTable } from "./cost";
 import { fmtIdle } from "./statusline";
+import { idleMinutes } from "./transcript";
 
 /**
  * Find abandoned sessions across the WHOLE MACHINE. `kt handoff --recover` follows cwd, so it only
@@ -113,19 +114,27 @@ export function listSessions(root: string, opts: ListOptions): SessionRow[] {
   }
 
   found.sort((a, b) => b.mtime - a.mtime);
-  return found.slice(0, opts.limit).map((r) => {
-    const { cwd, branch } = readMeta(r.path);
-    const { tokens, model } = readLastUsage(r.path);
-    return {
-      path: r.path,
-      cwd,
-      branch,
-      idleMinutes: Math.max(0, (now - r.mtime) / 60_000),
-      tokens,
-      model,
-      bytes: r.bytes,
-    };
-  });
+  // mtime stays the scan key — it costs one stat() across ~1,900 files. But the idle a human READS
+  // comes from the last conversation entry: bookkeeping writes keep mtime fresh on an abandoned
+  // session, which would make it look recently worked on. Only the printed rows pay for that read.
+  return found
+    .slice(0, opts.limit)
+    .map((r) => {
+      const { cwd, branch } = readMeta(r.path);
+      const { tokens, model } = readLastUsage(r.path);
+      return {
+        path: r.path,
+        cwd,
+        branch,
+        idleMinutes: idleMinutes(r.path, now),
+        tokens,
+        model,
+        bytes: r.bytes,
+      };
+    })
+    // Re-sort on the number actually printed. mtime picked the candidates; showing them in mtime
+    // order would leave the idle column jumping around (0m, 14h, 22h, 6h) and unreadable.
+    .sort((a, b) => a.idleMinutes - b.idleMinutes);
 }
 
 /** A table for a human to scan: which column costs the most, which session is worth rescuing. */

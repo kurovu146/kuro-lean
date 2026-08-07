@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
 import { CACHE_READ_MULT, CACHE_WRITE_MULT, priceOf, type Price, type PricingTable } from "../cost";
 import { fmtIdle } from "../statusline";
+import { idleMinutes, lastActivity } from "../transcript";
 
 /**
  * Warn BEFORE the request leaves the machine. The status line only redraws AFTER the turn was sent,
@@ -89,7 +90,7 @@ export function lastContextTokens(transcriptPath: string): number {
   return lastContext(transcriptPath).tokens;
 }
 
-/** A marker anchored to mtime: one expiry gets blocked exactly once. */
+/** A marker anchored to the last activity: one expiry gets blocked exactly once. */
 export function markerPath(transcriptPath: string): string {
   const key = createHash("md5").update(transcriptPath).digest("hex").slice(0, 8);
   return join(tmpdir(), `kt-idle-${key}.json`);
@@ -133,28 +134,26 @@ export function promptGuardOutput(
   const path = input.transcript_path;
   if (!path || !existsSync(path)) return null;
 
-  let mtime: number;
-  try {
-    mtime = statSync(path).mtimeMs;
-  } catch {
-    return null;
-  }
-  const idleMinutes = Math.max(0, (now - mtime) / 60_000);
-  if (idleMinutes < idleMin) return null; // the normal path exits here, without reading a byte
+  // NOT the file's mtime. Claude Code appends bookkeeping (file-history-snapshot, ai-title, mode…)
+  // while the panel sits untouched, so mtime always undercounts: a panel idle 3h38m reported 22m.
+  // Costs one bounded 64KB tail read per prompt — the price of a number that is actually true.
+  const idle = idleMinutes(path, now);
+  if (idle < idleMin) return null;
 
   const state = markerPath(path);
+  const activity = lastActivity(path);
   const { tokens, model } = lastContext(path);
   const decision = decidePromptGuard(
     {
-      idleMinutes,
+      idleMinutes: idle,
       tokens,
       price: model ? priceOf(model, cfg.pricing) : null,
-      alreadyWarned: hasWarned(state, mtime),
+      alreadyWarned: hasWarned(state, activity),
     },
     { idleMin, minTokens },
   );
   if (!decision) return null;
 
-  markWarned(state, mtime);
+  markWarned(state, activity);
   return JSON.stringify({ decision: "block", reason: decision.reason });
 }

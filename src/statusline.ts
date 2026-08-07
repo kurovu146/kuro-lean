@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
+import { idleMinutes } from "./transcript";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
@@ -380,13 +381,9 @@ export function collectIdle(
 ): Extras["idle"] {
   const path = input.transcript_path;
   if (!path || !existsSync(path)) return null;
-  let mtime: number;
-  try {
-    mtime = statSync(path).mtimeMs;
-  } catch {
-    return null;
-  }
-  const minutes = Math.max(0, (now - mtime) / 60_000);
+  // Time since the conversation last moved, not since the file was last written — bookkeeping entries
+  // keep bumping mtime while the panel is idle, which made this read "warmer" than the cache really is.
+  const minutes = idleMinutes(path, now);
   const cacheAlive = minutes < CACHE_TTL_MIN;
   const model = input.model?.id;
   const p = pricing && model ? priceOf(model, pricing) : null;

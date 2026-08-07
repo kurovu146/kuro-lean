@@ -49,6 +49,37 @@ test("lists sessions machine-wide: newest first, with the repo/branch/tokens of 
   expect(rows[1]!.tokens).toBe(263_000);
 });
 
+test("a fresh mtime doesn't fake recency: rows are ordered by when the conversation last moved", () => {
+  // Bookkeeping (file-history-snapshot, ai-title…) keeps touching an abandoned transcript, so its
+  // mtime can be newer than a session genuinely worked on an hour ago. The table must not be fooled.
+  const root = tmp();
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const write = (slug: string, file: string, cwd: string, lastTurnMin: number, mtimeMin: number) => {
+    const dir = join(root, slug);
+    mkdirSync(dir, { recursive: true });
+    const p = join(dir, file);
+    writeFileSync(
+      p,
+      [
+        JSON.stringify({ type: "user", cwd, gitBranch: "main" }),
+        JSON.stringify({ message: { role: "user", content: "x".repeat(3000) } }),
+        JSON.stringify({ type: "assistant", timestamp: ago(lastTurnMin), message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 90_000 } } }),
+        JSON.stringify({ type: "file-history-snapshot" }),
+      ].join("\n") + "\n",
+    );
+    const t = new Date(Date.now() - mtimeMin * 60_000);
+    utimesSync(p, t, t);
+  };
+  write("-Users-kuro-Dev-abandoned", "a.jsonl", "/Users/kuro/Dev/abandoned", 300, 5); // idle 5h, mtime 5m
+  write("-Users-kuro-Dev-recent", "b.jsonl", "/Users/kuro/Dev/recent", 60, 60); // idle 1h, mtime 1h
+
+  const rows = listSessions(root, { minBytes: 1000, limit: 10 });
+
+  expect(rows[0]!.cwd).toBe("/Users/kuro/Dev/recent"); // 1h beats 5h, despite the older mtime
+  expect(Math.round(rows[0]!.idleMinutes)).toBe(60);
+  expect(Math.round(rows[1]!.idleMinutes)).toBe(300); // NOT the 5 minutes its mtime claims
+});
+
 test("skips sessions that are too short: nothing to rescue means nothing in the list", () => {
   const root = tmp();
   fakeSession(root, "-Users-kuro-Dev-mot", "co-viec.jsonl", {
