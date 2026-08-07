@@ -72,8 +72,7 @@ function bar(pct: number, width = 10): string {
   return "▰".repeat(filled) + "▱".repeat(width - filled);
 }
 
-function homify(p: string): string {
-  const home = homedir();
+function homify(p: string, home: string): string {
   return p && p.startsWith(home) ? "~" + p.slice(home.length) : p || "";
 }
 
@@ -116,6 +115,7 @@ export function renderStatusline(
   input: StatuslineInput,
   cfg: { warnPct: number; dangerPct: number },
   extras?: Extras,
+  home: string = homedir(),
 ): string {
   const cw = input.context_window ?? {};
   const size = cw.context_window_size ?? 0;
@@ -150,7 +150,7 @@ export function renderStatusline(
 
   if (extras) {
     // L2: dir · branch · plan
-    const l2: string[] = [`📁 ${homify(extras.dir)}`];
+    const l2: string[] = [`📁 ${homify(extras.dir, home)}`];
     if (extras.git?.branch) {
       let b = `🌿 ${extras.git.branch}`;
       if (extras.git.ahead) b += ` ↑${extras.git.ahead}`;

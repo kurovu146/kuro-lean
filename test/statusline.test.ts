@@ -8,6 +8,8 @@ import { appendMeta } from "../src/store";
 import { rmSync, mkdirSync } from "fs";
 
 const cfg = { warnPct: 60, dangerPct: 85 };
+// the home to shorten against is injected, never homedir() - on CI that is /home/runner
+const HOME = "/Users/kuro";
 
 test("below warn => green + tokens + cost", () => {
   const s = renderStatusline(
@@ -80,7 +82,7 @@ test("used_percentage = null (after /clear) => white dot, no 'null%'", () => {
 
 test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
   const extras: Extras = {
-    dir: `${process.env.HOME}/Dev/kuro-lean`,
+    dir: `${HOME}/Dev/kuro-lean`,
     git: { branch: "main", ahead: 1, behind: 0, added: 12, removed: 3 },
     tools: 8,
     todos: { done: 2, total: 5 },
@@ -91,6 +93,7 @@ test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () 
     { context_window: { used_percentage: 10, context_window_size: 200000 }, cost: { total_cost_usd: 0.5 } },
     cfg,
     extras,
+    HOME,
   );
   const [l1, l2, l3] = s.split("\n");
   // L1: quota comes before cost
