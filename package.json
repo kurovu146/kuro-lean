@@ -1,6 +1,6 @@
 {
   "name": "kuro-lean",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "description": "Cuts the token bill of AI coding agents: compresses shell output, blocks token-hungry calls before they run, prices your session, and rescues sessions whose prompt cache expired.",
   "keywords": [
