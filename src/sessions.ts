@@ -17,6 +17,14 @@ import { idleMinutes } from "./transcript";
 const HEAD_BYTES = 16_000;
 const TAIL_BYTES = 64_000;
 
+/**
+ * How many rows the table holds, for BOTH `--list` and the lookup behind `--recover --from <#>`.
+ * One constant on purpose: when the two were 10 and 20, row 7 on screen and row 7 in the rescue were
+ * different sessions. It also has to clear the number of sessions actually kept open at once — at 10,
+ * a live 585k-token session sat at row 13 and looked like it had been dropped.
+ */
+export const LIST_LIMIT = 20;
+
 export interface SessionRow {
   path: string;
   cwd: string;
@@ -52,12 +60,23 @@ function readSlice(path: string, bytes: number, from: "head" | "tail"): string {
   }
 }
 
-/** cwd/gitBranch appear scattered through the transcript; take the first occurrence near the head. */
-export function readMeta(path: string): { cwd: string; branch: string } {
+/**
+ * cwd/gitBranch appear scattered through the transcript; take the first occurrence near the head.
+ *
+ * `team` is what marks a TEAMMATE: one orchestrator run drops a full transcript per spawned agent
+ * into the same project directory, all big and all touched minutes apart. `agentName` can't be the
+ * marker — Claude Code also parks an auto-generated session title there ("Nghiên cứu Polytail"), so
+ * filtering on it hides real sessions. `teamName` is only ever set on a spawned teammate: across 885
+ * transcripts here, every parent (including the 6 MB orchestrator) had none.
+ */
+export function readMeta(path: string): { cwd: string; branch: string; team: string } {
   const head = readSlice(path, HEAD_BYTES, "head");
   return {
     cwd: /"cwd":"((?:[^"\\]|\\.)*)"/.exec(head)?.[1] ?? "",
     branch: /"gitBranch":"((?:[^"\\]|\\.)*)"/.exec(head)?.[1] ?? "",
+    // A transcript quoting another transcript escapes its quotes (\"teamName\":), so this only
+    // matches the real field, never a teammate brief echoed into an orchestrator's own log.
+    team: /"teamName":"((?:[^"\\]|\\.)*)"/.exec(head)?.[1] ?? "",
   };
 }
 
@@ -113,28 +132,40 @@ export function listSessions(root: string, opts: ListOptions): SessionRow[] {
     }
   }
 
+  if (opts.limit < 1) return [];
   found.sort((a, b) => b.mtime - a.mtime);
-  // mtime stays the scan key — it costs one stat() across ~1,900 files. But the idle a human READS
-  // comes from the last conversation entry: bookkeeping writes keep mtime fresh on an abandoned
-  // session, which would make it look recently worked on. Only the printed rows pay for that read.
-  return found
-    .slice(0, opts.limit)
-    .map((r) => {
-      const { cwd, branch } = readMeta(r.path);
-      const { tokens, model } = readLastUsage(r.path);
-      return {
-        path: r.path,
-        cwd,
-        branch,
-        idleMinutes: idleMinutes(r.path, now),
-        tokens,
-        model,
-        bytes: r.bytes,
-      };
-    })
-    // Re-sort on the number actually printed. mtime picked the candidates; showing them in mtime
-    // order would leave the idle column jumping around (0m, 14h, 22h, 6h) and unreadable.
-    .sort((a, b) => a.idleMinutes - b.idleMinutes);
+
+  /**
+   * The rows are ranked by the idle a human READS — the last conversation entry — because bookkeeping
+   * writes keep mtime fresh on an abandoned session. Reading that out of ~830 candidates would throw
+   * away the stat()-first design, so lean on the one guarantee mtime gives: the last message can never
+   * be newer than the last write, so idle-by-mtime is a LOWER BOUND on real idle. Walking newest-mtime
+   * first, that bound only grows; once it passes the worst row already held, nothing further down can
+   * beat it — stop. On a real machine that reads 15 tails instead of 827.
+   *
+   * The result is the EXACT top-N, which is what makes the row numbers usable: `--list` prints 10 rows
+   * and `--recover --from <#>` resolves against 20, so a shorter table has to be a prefix of a longer
+   * one. Ranking a slice (mtime first, then re-sort) is not — it made row 7 two different sessions.
+   */
+  const best: { path: string; bytes: number; idle: number; cwd: string; branch: string }[] = [];
+  for (const c of found) {
+    const floor = (now - c.mtime) / 60_000;
+    if (best.length >= opts.limit && floor >= best[best.length - 1]!.idle) break;
+    // Skipped BEFORE ranking, not after: teammates are the freshest files on disk, so filtering the
+    // finished table would leave it short while the parent still sat below the fold.
+    const { cwd, branch, team } = readMeta(c.path);
+    if (team) continue;
+    const idle = idleMinutes(c.path, now);
+    const at = best.findIndex((b) => b.idle > idle);
+    best.splice(at < 0 ? best.length : at, 0, { path: c.path, bytes: c.bytes, idle, cwd, branch });
+    if (best.length > opts.limit) best.pop();
+  }
+
+  // Only the surviving rows pay for the tail read (usage); the head read already happened above.
+  return best.map((r) => {
+    const { tokens, model } = readLastUsage(r.path);
+    return { path: r.path, cwd: r.cwd, branch: r.branch, idleMinutes: r.idle, tokens, model, bytes: r.bytes };
+  });
 }
 
 /** A table for a human to scan: which column costs the most, which session is worth rescuing. */
@@ -175,7 +206,7 @@ export type HandoffArgs =
 export function parseHandoffArgs(rest: string[]): HandoffArgs {
   const copy = rest.includes("--copy");
   const args = rest.filter((a) => a !== "--copy"); // filter first, or it becomes the filename
-  if (args[0] === "--list") return { mode: "list", limit: Number(args[1]) || 10 };
+  if (args[0] === "--list") return { mode: "list", limit: Number(args[1]) || LIST_LIMIT };
   if (args[0] === "--recover") {
     const tail = args.slice(1);
     const i = tail.indexOf("--from");

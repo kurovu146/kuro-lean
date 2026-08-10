@@ -14,7 +14,6 @@ import { join } from "path";
 
 /** Below this, a session has nothing worth rescuing yet - keep it out of the picker. */
 const MIN_SESSION_BYTES = 20_000;
-const LIST_LIMIT = 20;
 
 async function readStdin(): Promise<string> {
   const chunks: Uint8Array[] = [];
@@ -54,7 +53,7 @@ async function main() {
       return;
     }
     case "handoff": {
-      const { clipboardCommand, listSessions, parseHandoffArgs, renderSessions, resolveFrom } =
+      const { clipboardCommand, LIST_LIMIT, listSessions, parseHandoffArgs, renderSessions, resolveFrom } =
         await import("./sessions");
       const args = parseHandoffArgs(rest);
       const projectsRoot = join(homedir(), ".claude", "projects");

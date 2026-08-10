@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCommand, listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
+import { clipboardCommand, LIST_LIMIT, listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
 import { defaultConfig } from "../src/config";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-sessions-"));
@@ -49,35 +49,109 @@ test("lists sessions machine-wide: newest first, with the repo/branch/tokens of 
   expect(rows[1]!.tokens).toBe(263_000);
 });
 
+/** A transcript whose last turn and whose mtime are set independently — the two disagree in real life. */
+function fakeSessionAt(
+  root: string,
+  slug: string,
+  file: string,
+  cwd: string,
+  lastTurnMin: number,
+  mtimeMin: number,
+): void {
+  const dir = join(root, slug);
+  mkdirSync(dir, { recursive: true });
+  const p = join(dir, file);
+  writeFileSync(
+    p,
+    [
+      JSON.stringify({ type: "user", cwd, gitBranch: "main" }),
+      JSON.stringify({ message: { role: "user", content: "x".repeat(3000) } }),
+      JSON.stringify({ type: "assistant", timestamp: new Date(Date.now() - lastTurnMin * 60_000).toISOString(), message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 90_000 } } }),
+      JSON.stringify({ type: "file-history-snapshot" }),
+    ].join("\n") + "\n",
+  );
+  const t = new Date(Date.now() - mtimeMin * 60_000);
+  utimesSync(p, t, t);
+}
+
 test("a fresh mtime doesn't fake recency: rows are ordered by when the conversation last moved", () => {
   // Bookkeeping (file-history-snapshot, ai-title…) keeps touching an abandoned transcript, so its
   // mtime can be newer than a session genuinely worked on an hour ago. The table must not be fooled.
   const root = tmp();
-  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
-  const write = (slug: string, file: string, cwd: string, lastTurnMin: number, mtimeMin: number) => {
-    const dir = join(root, slug);
-    mkdirSync(dir, { recursive: true });
-    const p = join(dir, file);
-    writeFileSync(
-      p,
-      [
-        JSON.stringify({ type: "user", cwd, gitBranch: "main" }),
-        JSON.stringify({ message: { role: "user", content: "x".repeat(3000) } }),
-        JSON.stringify({ type: "assistant", timestamp: ago(lastTurnMin), message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 90_000 } } }),
-        JSON.stringify({ type: "file-history-snapshot" }),
-      ].join("\n") + "\n",
-    );
-    const t = new Date(Date.now() - mtimeMin * 60_000);
-    utimesSync(p, t, t);
-  };
-  write("-Users-kuro-Dev-abandoned", "a.jsonl", "/Users/kuro/Dev/abandoned", 300, 5); // idle 5h, mtime 5m
-  write("-Users-kuro-Dev-recent", "b.jsonl", "/Users/kuro/Dev/recent", 60, 60); // idle 1h, mtime 1h
+  fakeSessionAt(root, "-Users-kuro-Dev-abandoned", "a.jsonl", "/Users/kuro/Dev/abandoned", 300, 5); // idle 5h, mtime 5m
+  fakeSessionAt(root, "-Users-kuro-Dev-recent", "b.jsonl", "/Users/kuro/Dev/recent", 60, 60); // idle 1h, mtime 1h
 
   const rows = listSessions(root, { minBytes: 1000, limit: 10 });
 
   expect(rows[0]!.cwd).toBe("/Users/kuro/Dev/recent"); // 1h beats 5h, despite the older mtime
   expect(Math.round(rows[0]!.idleMinutes)).toBe(60);
   expect(Math.round(rows[1]!.idleMinutes)).toBe(300); // NOT the 5 minutes its mtime claims
+});
+
+test("subagents spawned into a team are not sessions to rescue", () => {
+  // One orchestrator run writes a transcript per teammate into the SAME project directory, each of
+  // them big and recently touched. Measured 2026-08-08: 36 of the 41 mukbang-story-gen transcripts
+  // were teammates, and they filled the table while the parent sat below the fold. A teammate is not
+  // rescuable anyway — its brief came from the parent, so resuming one restarts half an errand.
+  const root = tmp();
+  const write = (slug: string, file: string, cwd: string, extra: Record<string, unknown>) => {
+    const dir = join(root, slug);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, file),
+      [
+        JSON.stringify({ type: "user", cwd, gitBranch: "main", ...extra }),
+        JSON.stringify({ message: { role: "user", content: "x".repeat(3000) } }),
+        JSON.stringify({ type: "assistant", timestamp: new Date().toISOString(), message: { model: "claude-opus-5", usage: { cache_read_input_tokens: 90_000 } } }),
+      ].join("\n") + "\n",
+    );
+  };
+  write("-Users-kuro-Dev-mot", "impl-task3.jsonl", "/Users/kuro/Dev/mot", { agentName: "impl-task3", teamName: "session-6cccb2d9" });
+  write("-Users-kuro-Dev-mot", "rev-task9.jsonl", "/Users/kuro/Dev/mot", { agentName: "rev-task9", teamName: "session-6cccb2d9" });
+  write("-Users-kuro-Dev-mot", "parent.jsonl", "/Users/kuro/Dev/mot", {});
+
+  const rows = listSessions(root, { minBytes: 1000, limit: 10 });
+
+  // the orchestrator that spawned them IS worth rescuing, and it carries no teamName
+  expect(rows.length).toBe(1);
+  expect(rows[0]!.path).toContain("parent.jsonl");
+});
+
+test("a session titled after its work is not mistaken for a subagent", () => {
+  // Claude Code also parks an auto-generated TITLE in agentName. Filtering on agentName alone would
+  // have hidden two real sessions (e.g. "Tiếp tục dạy anh học lập trình"); only teamName means teammate.
+  const root = tmp();
+  const dir = join(root, "-Users-kuro-Dev-mot");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "titled.jsonl"),
+    [
+      JSON.stringify({ type: "user", cwd: "/Users/kuro/Dev/mot", gitBranch: "main", agentName: "Nghiên cứu Polytail" }),
+      JSON.stringify({ message: { role: "user", content: "x".repeat(3000) } }),
+    ].join("\n") + "\n",
+  );
+
+  expect(listSessions(root, { minBytes: 1000, limit: 10 }).length).toBe(1);
+});
+
+test("row numbers do not shift with the limit: a short table is a prefix of a longer one", () => {
+  // `--list` builds the table with the row count you asked for, `--recover --from <#>` rebuilds it
+  // with its own. If the ranking depended on how many rows were requested, the number you read off
+  // the table would rescue a DIFFERENT session — measured 2026-08-08: row 7 was ~/Dev/vnarena/fe on
+  // screen and ~/Dev/mukbang-story-gen in the rescue.
+  const root = tmp();
+  fakeSessionAt(root, "-a", "a.jsonl", "/Dev/a", 10, 1);
+  fakeSessionAt(root, "-b", "b.jsonl", "/Dev/b", 20, 2);
+  fakeSessionAt(root, "-c", "c.jsonl", "/Dev/c", 500, 3); // abandoned, but bookkeeping keeps its mtime freshest
+  fakeSessionAt(root, "-d", "d.jsonl", "/Dev/d", 30, 4);
+  fakeSessionAt(root, "-e", "e.jsonl", "/Dev/e", 40, 5);
+
+  const short = listSessions(root, { minBytes: 1000, limit: 3 });
+  const long = listSessions(root, { minBytes: 1000, limit: 5 });
+
+  expect(short.map((r) => r.cwd)).toEqual(long.slice(0, 3).map((r) => r.cwd));
+  // and the top 3 are the 3 genuinely least idle, not whichever 3 were touched last
+  expect(short.map((r) => r.cwd)).toEqual(["/Dev/a", "/Dev/b", "/Dev/d"]);
 });
 
 test("skips sessions that are too short: nothing to rescue means nothing in the list", () => {
@@ -135,8 +209,14 @@ test("kt handoff with no flags => still the session-closing prompt as before", (
 });
 
 test("kt handoff --list [N] => lists them, N is the row count", () => {
-  expect(parseHandoffArgs(["--list"])).toEqual({ mode: "list", limit: 10 });
-  expect(parseHandoffArgs(["--list", "20"])).toEqual({ mode: "list", limit: 20 });
+  expect(parseHandoffArgs(["--list"])).toEqual({ mode: "list", limit: LIST_LIMIT });
+  expect(parseHandoffArgs(["--list", "5"])).toEqual({ mode: "list", limit: 5 });
+});
+
+test("the printed table and the --from lookup use ONE limit, so a row number can't mean two things", () => {
+  // They were 10 and 20 once. Row 7 on screen was ~/Dev/vnarena/fe; `--from 7` rescued
+  // ~/Dev/mukbang-story-gen. Anything that re-introduces a second number brings that back.
+  expect((parseHandoffArgs(["--list"]) as { limit: number }).limit).toBe(LIST_LIMIT);
 });
 
 test("kt handoff --recover [N] --from X => keeps the old N, adds a way to point at a session", () => {
