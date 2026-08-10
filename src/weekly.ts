@@ -88,10 +88,10 @@ export function readWeekly(
  * complete file or the new one — never a half-written JSON blob from two refreshes interleaving. Two
  * refreshes racing now just costs a duplicated scan, nothing worse.
  *
- * The write and the rename are separate `try`s: if the write itself fails there is no temp file to
- * clean up, but if the write succeeds and ONLY the rename fails (e.g. the destination is occupied by
- * something rename can't replace), the temp file is removed best-effort rather than left behind
- * forever next to the cache.
+ * The write and the rename are separate `try`s, and BOTH clear the temp file best-effort on their
+ * way out: a rename that fails (the destination is occupied by something rename can't replace)
+ * leaves a complete temp file behind, and a write that fails partway leaves a partial one. Neither
+ * belongs next to the cache forever.
  */
 export function refreshWeekly(
   now: number,
@@ -105,6 +105,11 @@ export function refreshWeekly(
   try {
     writeFileSync(tmp, JSON.stringify({ writtenAtMs: now, line }));
   } catch {
+    // Not always a no-op: a write that throws on open created nothing, but one that throws partway
+    // (ENOSPC after the file exists) leaves a partial temp file that nobody else will ever collect.
+    try {
+      rmSync(tmp, { force: true });
+    } catch {}
     return;
   }
   try {
@@ -118,20 +123,23 @@ export function refreshWeekly(
 
 /**
  * `mkdir` either creates the directory or throws — atomic across processes, unlike "check then
- * write". This is intentionally NOT mutual exclusion: two rounds of trying to make a stale takeover
- * atomic (rename-away, then verify-and-restore) each closed one interleaving and opened a narrower
- * one — a 3-caller interleaving still lets two callers both believe they hold the lock, and a real fix
- * needs a kernel-level advisory lock (`flock`), which a native dependency would provide but the
- * plan's constraints forbid.
+ * write" — and it is the only path here that can return `true`: a caller never claims a directory it
+ * did not create itself.
  *
- * So this does something weaker but actually correct: claim the lock ONLY by creating it (atomic,
- * genuinely exclusive), and if someone else already holds it, clear it if it looks abandoned — but
- * decline this call regardless. Nobody takes over a directory they did not create, so the
- * double-acquire family does not shrink, it disappears. Two callers racing to clear the same corpse
- * is idempotent (`rmSync` with `force: true`). The cost of a live-but-slow owner losing its directory
- * to an over-eager clear is one redundant scan seconds later — harmless now that `refreshWeekly`'s
- * cache write is atomic. This is best-effort de-duplication of a background scan, not a real lock:
- * do not reach for it anywhere correctness depends on exclusivity.
+ * That is still not mutual exclusion, and two callers CAN both come away believing they hold this.
+ * The staleness check and the `rmSync` acting on it are separate syscalls with no identity check
+ * between them, so a caller preempted in that gap wakes up and deletes whatever sits at the path by
+ * then — which may be a FRESH directory another caller created meanwhile and is actively scanning
+ * behind. That owner never learns it was evicted, the path is now free for the next caller to take,
+ * and the two of them scan at once. Closing this needs an atomic compare-identity-and-mutate, which
+ * POSIX does not offer without a native advisory lock (`flock`) that the plan's no-new-dependency
+ * constraint rules out; three earlier rounds of rename-and-verify each closed one interleaving and
+ * opened a narrower one.
+ *
+ * It stays this way because the loss is bounded, not because it is safe: `refreshWeekly` swaps the
+ * cache in with a rename, so the entire cost of a lost race is one redundant ~0.5s scan — never a
+ * torn file or a wrong number. Best-effort de-duplication of a background scan, not a lock: do not
+ * reach for it anywhere correctness depends on exclusivity.
  */
 export function acquireLock(now: number, lockDir: string): boolean {
   try {

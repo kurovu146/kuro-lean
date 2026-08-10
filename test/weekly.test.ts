@@ -119,7 +119,8 @@ test("a corpse left behind by a dead process is cleared, but this call still dec
 
   // acquireLock does not take over a directory it did not create -- clearing a corpse and claiming it
   // in the same call is exactly the shape that let two callers both believe they held the lock across
-  // rounds 1 and 2. This call only clears; it does not claim.
+  // rounds 1 and 2. This call only clears; it does not claim. That is a narrower failure mode, not a
+  // closed one -- see the comment on acquireLock for the interleaving that still gets through.
   expect(acquireLock(NOW, lock)).toBe(false);
   expect(existsSync(lock)).toBe(false);
 
