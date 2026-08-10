@@ -106,7 +106,7 @@ export function refreshWeekly(
   paths: { root?: string; configPath?: string; cachePath?: string },
   table: PricingTable,
 ): void {
-  const root = paths.root ?? process.env.KT_PROJECTS_ROOT ?? undefined;
+  const root = paths.root ?? process.env.KT_PROJECTS_ROOT;
   const rows = collectUsageSince(cycleStart(now, paths.configPath), root);
   const line = formatWeekly(rows, table);
   const cachePath = paths.cachePath ?? weeklyCachePath();
