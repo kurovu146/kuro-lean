@@ -215,9 +215,10 @@ export const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
  *
  * A file untouched since the window began cannot hold usage inside it, so it is never opened. That
  * one `statSync` is the whole performance story: measured on 2,016 transcripts (1.12 GB), 230 files /
- * 245 MB are in a live window, ~0.5–0.8s and ~290 MB peak RSS. When the mtime filter is defeated —
+ * 245 MB are in a live window, ~0.5–0.9s and ~290 MB peak RSS. When the mtime filter is defeated —
  * a restore from backup, an `rsync`, or copying `~/.claude` to a new machine, all of which restamp
- * every file — nothing is skipped and the same scan costs ~3.4–4.1s and ~430 MB.
+ * every file — nothing is skipped and the same scan costs ~3.4–4.1s and ~400–520 MB, every 10
+ * minutes, for as long as those timestamps stay fresh.
  */
 export function collectUsageSince(
   since: number,

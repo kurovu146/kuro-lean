@@ -146,7 +146,7 @@ export function refreshWeekly(
  * opened a narrower one.
  *
  * It stays this way because the loss is bounded, not because it is safe: `refreshWeekly` swaps the
- * cache in with a rename, so the entire cost of a lost race is one redundant ~0.5s scan — never a
+ * cache in with a rename, so the entire cost of a lost race is one redundant ~0.5–0.9s scan — never a
  * torn file or a wrong number. Best-effort de-duplication of a background scan, not a lock: do not
  * reach for it anywhere correctness depends on exclusivity.
  */

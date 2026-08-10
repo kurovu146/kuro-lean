@@ -438,9 +438,10 @@ function spawnWeeklyRefresh(): void {
 }
 
 /**
- * The cached weekly line, plus a detached rescan when it has aged out. The scan is ~0.5s — far too
- * slow to run inline on a line that redraws every turn — so this turn shows the previous value and
- * the next one shows the fresh figure.
+ * The cached weekly line, plus a detached rescan when it has aged out. The scan is ~0.5–0.9s and
+ * ~290 MB peak RSS over 2,016 transcripts (and ~3.4–4.1s if every file looks fresh — see
+ * `collectUsageSince`) — far too slow to run inline on a line that redraws every turn — so this turn
+ * shows the previous value and the next one shows the fresh figure.
  *
  * The clock, the cache path and the refresh itself are all injected. `enabled: false` is a promise
  * about someone else's machine — no segment AND no background process — and a promise that spawns a
