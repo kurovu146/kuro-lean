@@ -17,7 +17,7 @@ export interface Config {
   limits: { maxChars: number };
   run: { timeoutMs: number; rawUnderChars: number };
   store: { keepRuns: number };
-  statusline: { warnPct: number; dangerPct: number };
+  statusline: { warnPct: number; dangerPct: number; weekly: boolean };
   guard: GuardConfig;
   promptGuard: import("./hooks/prompt").PromptGuardConfig;
   pricing: PricingTable;
@@ -35,7 +35,8 @@ export const defaultConfig: Config = {
   // (+34% ctx), losing more than the compression saves. 0 = disabled.
   run: { timeoutMs: 120_000, rawUnderChars: 4000 },
   store: { keepRuns: 50 },
-  statusline: { warnPct: 60, dangerPct: 85 },
+  // weekly: the week's spend on L3. On by default; false skips the background scan entirely.
+  statusline: { warnPct: 60, dangerPct: 85, weekly: true },
   guard: { maxCatKb: 100, maxReadKb: 500, rules: { findRoot: true, npmLs: true, treeNoDepth: true, gitLogP: true, catBig: true, readNoise: true } },
   // Block the first turn after the cache dies (1h TTL) to ask: continue the old session, or use
   // `kt handoff --recover` for cheap. It blocks BEFORE the request leaves the machine, so the reload

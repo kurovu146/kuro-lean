@@ -49,7 +49,7 @@ async function main() {
     case "status": {
       const input = JSON.parse((await readStdin()) || "{}") as StatuslineInput;
       process.stdout.write(
-        renderStatusline(input, config.statusline, collectExtras(input, config.pricing)),
+        renderStatusline(input, config.statusline, collectExtras(input, config.pricing, config.statusline.weekly)),
       );
       return;
     }

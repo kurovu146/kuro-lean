@@ -359,3 +359,27 @@ test("no config / no cached usage => null, nothing rendered", () => {
   expect(readQuota(NOW, join(tmpdir(), "kt-quota-test-missing.json"))).toBeNull();
   expect(readQuota(NOW, writeQuotaFixture("empty", {}))).toBeNull();
 });
+
+test("weekly sits at the very end of L3, after the quota clock", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    { dir: "/tmp/x", git: null, tools: 8, todos: null, quota: "📅 3d 13h left", plan: null,
+      savedTokens: 130000, weekly: "💵 wk $1.7k 2.7B" },
+    HOME,
+  );
+  const l3 = s.split("\n")[2]!;
+  expect(l3.endsWith("💵 wk $1.7k 2.7B")).toBe(true);
+  expect(l3.indexOf("📅")).toBeLessThan(l3.indexOf("💵"));
+});
+
+test("no weekly line => the segment is absent entirely, no stray separator", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    { dir: "/tmp/x", git: null, tools: 8, todos: null, quota: null, plan: null, weekly: null },
+    HOME,
+  );
+  expect(s).not.toContain("💵");
+  expect(s.split("\n")[2]).toBe("🔧 8 tools");
+});

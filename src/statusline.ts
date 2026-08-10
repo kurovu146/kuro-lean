@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { idleMinutes } from "./transcript";
 import { homedir, tmpdir } from "os";
@@ -6,6 +6,7 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { readMeta } from "./store";
 import { perTurnCost, priceOf, CACHE_WRITE_MULT, type PricingTable } from "./cost";
+import { readWeekly } from "./weekly";
 
 export interface StatuslineInput {
   cwd?: string;
@@ -51,6 +52,8 @@ export interface Extras {
   // dead and the next turn must reload the whole context (2× input price) — that is when `/clear`
   // is worth the most.
   idle?: { minutes: number; cacheAlive: boolean; reloadCost: number | null } | null;
+  // The quota week's spend (e.g. "💵 wk $1.7k 2.7B"), served from a cache; null => hidden.
+  weekly?: string | null;
 }
 
 // Below this, a pause isn't worth mentioning — don't clutter the status line.
@@ -109,7 +112,7 @@ function ctxLabel(size: number): string {
  * The 3-line layout, matching statusline.cjs:
  *   L1: dot model (label) · bar % · ~tok · $cost
  *   L2: 📁 dir · 🌿 branch ↑↓ · 📋 plan
- *   L3: 📝 +/- · ✅ todo · 🔧 tools · ♻️ saved · 📅 quota
+ *   L3: 📝 +/- · ✅ todo · 🔧 tools · ♻️ saved · 📅 quota · 💵 weekly
  */
 export function renderStatusline(
   input: StatuslineInput,
@@ -170,8 +173,9 @@ export function renderStatusline(
       const t = extras.savedTokens;
       l3.push(`♻️ ~${t >= 1000 ? `${Math.round(t / 1000)}k` : t} saved`);
     }
-    // Last: the quota clock sits at the end of L3, where a weekly-usage segment gets appended.
+    // Last: the quota clock sits at the end of L3, where the weekly-usage segment gets appended.
     if (extras.quota) l3.push(extras.quota);
+    if (extras.weekly) l3.push(extras.weekly);
     if (l3.length) lines.push(l3.join(" · "));
   }
 
@@ -411,7 +415,26 @@ export function collectIdle(
   };
 }
 
-export function collectExtras(input: StatuslineInput, pricing?: PricingTable): Extras {
+/**
+ * The cached weekly line, plus a detached rescan when it has aged out. The scan is ~0.5s — far too
+ * slow to run inline on a line that redraws every turn — so this turn shows the previous value and
+ * the next one shows the fresh figure.
+ */
+function collectWeekly(enabled: boolean): string | null {
+  if (!enabled) return null;
+  const { line, stale } = readWeekly(Date.now());
+  if (stale) {
+    try {
+      const self = process.argv[1];
+      if (self) {
+        spawn(process.execPath, [self, "weekly", "--refresh"], { detached: true, stdio: "ignore" }).unref();
+      }
+    } catch {}
+  }
+  return line;
+}
+
+export function collectExtras(input: StatuslineInput, pricing?: PricingTable, weekly = true): Extras {
   const dir = input.cwd || process.cwd();
   const { tools, todos } = parseTranscript(input.transcript_path);
   const cw = input.context_window ?? {};
@@ -428,5 +451,6 @@ export function collectExtras(input: StatuslineInput, pricing?: PricingTable): E
     // needs the model *id* (e.g. claude-opus-5) — display_name ("Opus 5") doesn't match the price table.
     perTurn: pricing && modelId ? perTurnCost(totalTokens(cw), modelId, pricing) : null,
     idle: collectIdle(input, pricing),
+    weekly: collectWeekly(weekly),
   };
 }

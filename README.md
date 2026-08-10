@@ -471,7 +471,7 @@ then send another.
 ```
 🟢 Opus 5 (1M context) · ▰▰▰▱▱▱▱▱▱▱ 32% · ~320k tok · ⏳ 2h 15m left · 📅 3d 14h left · $12.40 · $1.60/turn · ❄️ 2h15 · reload ~$5.00
 📁 ~/Dev/kuro-lean · 🌿 main ↑2 · 📋 refactor sessions
-📝 +142 -37 · ✅ 3/7 · 🔧 18 tools · ♻️ ~15k saved
+📝 +142 -37 · ✅ 3/7 · 🔧 18 tools · ♻️ ~15k saved · 📅 3d 14h left · 💵 wk $1.7k 2.7B
 ```
 
 | Segment | Meaning |
@@ -482,6 +482,7 @@ then send another.
 | `❄️ 2h15 · reload ~$5.00` | The 1-hour cache TTL has expired: the next turn re-writes the whole context at 2× input, and that is the bill. **This is a receipt, not a warning** — it can only appear once a turn has been sent. `kt hook-prompt` is the part that gets there in time |
 | `♻️ ~15k saved` | Tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4). Hidden until the first compressed run |
 | `⏳ 3h 12m left` · `📅 3d 14h left` | Time left on your Claude usage windows — the 5-hour one and the **week** — read from `~/.claude.json` (`cachedUsageUtilization`). A window that has already reset is dropped. Countdowns only, deliberately: the `utilization` percentages in that file are a snapshot Claude Code refetches on its own schedule and can sit hours behind `/usage`, while `resets_at` is absolute and stays exact |
+| `💵 wk $1.7k 2.7B` | What the current quota week has cost so far, across **every** project on this machine, priced with your `pricing` table. The week is anchored to Claude Code's real `resets_at`, not a guessed weekday. Refreshed in the background every 10 minutes (a scan is ~0.5s, so it never blocks the line) and cached in your temp dir. A model with no entry in `pricing` still contributes its tokens, and the money reads `$1.7k+?` so the gap is visible. Turn it off with `"statusline": { "weekly": false }` |
 | 📋 plan · ✅ todo | From the CK-stack cache / transcript when available; auto-hidden otherwise |
 
 ## Compatibility with other AI tools
@@ -599,7 +600,7 @@ The full set of keys, with their default values:
   "limits": { "maxChars": 16000 },
   "run": { "timeoutMs": 120000, "rawUnderChars": 4000 },
   "store": { "keepRuns": 50 },
-  "statusline": { "warnPct": 60, "dangerPct": 85 },
+  "statusline": { "warnPct": 60, "dangerPct": 85, "weekly": true },
   "guard": {
     "maxCatKb": 100,
     "maxReadKb": 500,
