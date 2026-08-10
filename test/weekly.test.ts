@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { cycleStart, formatWeekly, WEEK_MS } from "../src/weekly";
+import { acquireLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
 import type { Usage } from "../src/cost";
 
 const NOW = Date.parse("2026-08-10T08:00:00Z");
@@ -51,4 +51,60 @@ test("nothing priced at all => the money is a question mark, not a confident zer
 
 test("no usage in the window => nothing to render", () => {
   expect(formatWeekly([], PRICING)).toBeNull();
+});
+
+function cacheFile(content: string): string {
+  const p = join(mkdtempSync(join(tmpdir(), "kt-wcache-")), "kt-weekly.json");
+  writeFileSync(p, content);
+  return p;
+}
+
+test("a cache inside the TTL is served as-is", () => {
+  const p = cacheFile(JSON.stringify({ writtenAtMs: NOW - 60_000, line: "💵 wk $1.0k 5.0M" }));
+  expect(readWeekly(NOW, p)).toEqual({ line: "💵 wk $1.0k 5.0M", stale: false });
+});
+
+test("past the TTL the line is still served, but flagged stale", () => {
+  const p = cacheFile(JSON.stringify({ writtenAtMs: NOW - WEEKLY_TTL_MS - 1, line: "💵 wk $1.0k 5.0M" }));
+  expect(readWeekly(NOW, p)).toEqual({ line: "💵 wk $1.0k 5.0M", stale: true });
+});
+
+test("a corrupt or missing cache hides the segment and asks for a refresh", () => {
+  expect(readWeekly(NOW, cacheFile("{not json"))).toEqual({ line: null, stale: true });
+  expect(readWeekly(NOW, join(tmpdir(), "kt-no-cache.json"))).toEqual({ line: null, stale: true });
+});
+
+test("refreshWeekly scans the transcripts and writes the line", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-wrefresh-"));
+  mkdirSync(join(root, "-proj"));
+  writeFileSync(
+    join(root, "-proj", "s.jsonl"),
+    JSON.stringify({
+      timestamp: "2026-08-09T00:00:00Z",
+      message: { model: "claude-opus-5", usage: { input_tokens: 0, output_tokens: 200_000_000 } },
+    }),
+  );
+  const cachePath = join(mkdtempSync(join(tmpdir(), "kt-wout-")), "kt-weekly.json");
+
+  refreshWeekly(NOW, { root, configPath: join(tmpdir(), "kt-none.json"), cachePath }, PRICING);
+
+  const written = JSON.parse(readFileSync(cachePath, "utf8"));
+  expect(written.writtenAtMs).toBe(NOW);
+  expect(written.line).toBe("💵 wk $5.0k 200.0M");
+});
+
+test("a held lock blocks a second refresh", () => {
+  const lock = join(mkdtempSync(join(tmpdir(), "kt-wlock-")), "lock");
+  expect(acquireLock(NOW, lock)).toBe(true);
+  expect(acquireLock(NOW, lock)).toBe(false);
+  releaseLock(lock);
+  expect(acquireLock(NOW, lock)).toBe(true);
+});
+
+test("a lock left behind by a dead process is reaped", () => {
+  const lock = join(mkdtempSync(join(tmpdir(), "kt-wstale-")), "lock");
+  mkdirSync(lock);
+  const old = new Date(NOW - 121_000);
+  utimesSync(lock, old, old);
+  expect(acquireLock(NOW, lock)).toBe(true);
 });
