@@ -427,7 +427,12 @@ function collectWeekly(enabled: boolean): string | null {
     try {
       const self = process.argv[1];
       if (self) {
-        spawn(process.execPath, [self, "weekly", "--refresh"], { detached: true, stdio: "ignore" }).unref();
+        const child = spawn(process.execPath, [self, "weekly", "--refresh"], { detached: true, stdio: "ignore" });
+        // posix_spawn failures (EMFILE, EACCES, ...) surface asynchronously on this event, after the
+        // try/catch around spawn() has already exited - an unhandled one here takes the whole render
+        // down. A background refresh that couldn't start must never crash the statusline.
+        child.on("error", () => {});
+        child.unref();
       }
     } catch {}
   }
