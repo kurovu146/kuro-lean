@@ -1,9 +1,10 @@
 import { test, expect } from "bun:test";
-import { writeFileSync } from "fs";
+import { writeFileSync, mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
-import { renderStatusline, collectGit, sessionCost, collectSavedTokens, readQuota, type Extras } from "../src/statusline";
+import { renderStatusline, collectGit, collectWeekly, sessionCost, collectSavedTokens, readQuota, type Extras } from "../src/statusline";
+import { WEEKLY_TTL_MS } from "../src/weekly";
 import { appendMeta } from "../src/store";
 import { rmSync, mkdirSync } from "fs";
 
@@ -377,6 +378,45 @@ test("a window inside the guard's range still renders — the guard is not swall
 test("no config / no cached usage => null, nothing rendered", () => {
   expect(readQuota(NOW, join(tmpdir(), "kt-quota-test-missing.json"))).toBeNull();
   expect(readQuota(NOW, writeQuotaFixture("empty", {}))).toBeNull();
+});
+
+// --- collectWeekly (cache read + the background rescan) -------------------------------------
+// The refresh is injected rather than spawned, so "weekly: false does no background work" is a claim
+// a test can actually check instead of one the suite has to take on trust.
+function weeklyCacheFile(name: string, writtenAtMs: number): string {
+  const p = join(mkdtempSync(join(tmpdir(), `kt-cw-${name}-`)), "kt-weekly.json");
+  writeFileSync(p, JSON.stringify({ writtenAtMs, line: "💵 wk $1.0k 5.0M" }));
+  return p;
+}
+
+test("statusline.weekly false => no line, and no background scan asked for", () => {
+  // The cache is deliberately STALE: on a fresh one the TTL check would hold the rescan back on its
+  // own, and "asked 0" would pass with the off-switch gone. Here only the off-switch can hold both.
+  const p = weeklyCacheFile("off", NOW - WEEKLY_TTL_MS - 1);
+  let asked = 0;
+  const line = collectWeekly(false, NOW, p, () => asked++);
+  expect(asked).toBe(0); // the half that keeps kt polite on someone else's machine - assert it first
+  expect(line).toBeNull();
+});
+
+test("a fresh cache is served without asking for a rescan", () => {
+  const p = weeklyCacheFile("fresh", NOW - 60_000);
+  let asked = 0;
+  expect(collectWeekly(true, NOW, p, () => asked++)).toBe("💵 wk $1.0k 5.0M");
+  expect(asked).toBe(0);
+});
+
+test("a stale cache still serves its line, and asks for exactly one rescan", () => {
+  const p = weeklyCacheFile("stale", NOW - WEEKLY_TTL_MS - 1);
+  let asked = 0;
+  expect(collectWeekly(true, NOW, p, () => asked++)).toBe("💵 wk $1.0k 5.0M");
+  expect(asked).toBe(1);
+});
+
+test("no cache at all => nothing to show, and a rescan is asked for", () => {
+  let asked = 0;
+  expect(collectWeekly(true, NOW, join(tmpdir(), "kt-cw-missing.json"), () => asked++)).toBeNull();
+  expect(asked).toBe(1);
 });
 
 test("weekly sits at the very end of L3, after the quota clock", () => {

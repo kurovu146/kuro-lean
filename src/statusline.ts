@@ -6,7 +6,7 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { readMeta } from "./store";
 import { perTurnCost, priceOf, CACHE_WRITE_MULT, type PricingTable } from "./cost";
-import { readWeekly } from "./weekly";
+import { readWeekly, weeklyCachePath } from "./weekly";
 
 export interface StatuslineInput {
   cwd?: string;
@@ -423,27 +423,38 @@ export function collectIdle(
   };
 }
 
+/** Ask a detached `kt weekly --refresh` to rebuild the cache. Fire-and-forget: nothing is awaited. */
+function spawnWeeklyRefresh(): void {
+  try {
+    const self = process.argv[1];
+    if (!self) return;
+    const child = spawn(process.execPath, [self, "weekly", "--refresh"], { detached: true, stdio: "ignore" });
+    // posix_spawn failures (EMFILE, EACCES, ...) surface asynchronously on this event, after the
+    // try/catch around spawn() has already exited - an unhandled one here takes the whole render
+    // down. A background refresh that couldn't start must never crash the statusline.
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+
 /**
  * The cached weekly line, plus a detached rescan when it has aged out. The scan is ~0.5s — far too
  * slow to run inline on a line that redraws every turn — so this turn shows the previous value and
  * the next one shows the fresh figure.
+ *
+ * The clock, the cache path and the refresh itself are all injected. `enabled: false` is a promise
+ * about someone else's machine — no segment AND no background process — and a promise that spawns a
+ * real child on the way to being checked cannot be tested at all.
  */
-function collectWeekly(enabled: boolean): string | null {
+export function collectWeekly(
+  enabled: boolean,
+  now: number = Date.now(),
+  cachePath: string = weeklyCachePath(),
+  refresh: () => void = spawnWeeklyRefresh,
+): string | null {
   if (!enabled) return null;
-  const { line, stale } = readWeekly(Date.now());
-  if (stale) {
-    try {
-      const self = process.argv[1];
-      if (self) {
-        const child = spawn(process.execPath, [self, "weekly", "--refresh"], { detached: true, stdio: "ignore" });
-        // posix_spawn failures (EMFILE, EACCES, ...) surface asynchronously on this event, after the
-        // try/catch around spawn() has already exited - an unhandled one here takes the whole render
-        // down. A background refresh that couldn't start must never crash the statusline.
-        child.on("error", () => {});
-        child.unref();
-      }
-    } catch {}
-  }
+  const { line, stale } = readWeekly(now, cachePath);
+  if (stale) refresh();
   return line;
 }
 
