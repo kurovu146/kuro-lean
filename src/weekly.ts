@@ -87,6 +87,11 @@ export function readWeekly(
  * place. Rename within one directory is atomic, so a concurrent `readWeekly` sees either the old
  * complete file or the new one — never a half-written JSON blob from two refreshes interleaving. Two
  * refreshes racing now just costs a duplicated scan, nothing worse.
+ *
+ * The write and the rename are separate `try`s: if the write itself fails there is no temp file to
+ * clean up, but if the write succeeds and ONLY the rename fails (e.g. the destination is occupied by
+ * something rename can't replace), the temp file is removed best-effort rather than left behind
+ * forever next to the cache.
  */
 export function refreshWeekly(
   now: number,
@@ -96,53 +101,37 @@ export function refreshWeekly(
   const rows = collectUsageSince(cycleStart(now, paths.configPath), paths.root);
   const line = formatWeekly(rows, table);
   const cachePath = paths.cachePath ?? weeklyCachePath();
+  const tmp = `${cachePath}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
   try {
-    const tmp = `${cachePath}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
     writeFileSync(tmp, JSON.stringify({ writtenAtMs: now, line }));
-    renameSync(tmp, cachePath);
-  } catch {}
-}
-
-/**
- * Move a stale lock directory out of the way, atomically — and verify what got moved was actually the
- * same stale directory the caller observed, not a fresh one a racing caller has since recreated.
- *
- * `rename` guarantees its source exists, so of two callers racing on the SAME originally-stale
- * `lockDir`, only the first finds it there — that alone closes the old `rmSync` + `mkdirSync` bug
- * (`rmSync(..., { force: true })` never throws on a missing target, so both racers could "succeed").
- * But `rename` does not care WHAT is at the source: if caller A has already reaped-and-recreated
- * `lockDir` by the time caller B's rename fires, B's rename still succeeds — just against A's fresh
- * lock instead of the stale one B actually meant to reap. `observedMtimeMs` (read by the caller
- * BEFORE this call, via the same `statSync` that decided "stale") closes that: if the claimed
- * directory's mtime does not match what was observed, B just stole a live lock — it is put back and
- * `null` is returned. If the restore itself collides (someone occupies `lockDir` again in the
- * meantime), that failure is swallowed too: either way this caller does not get to hold the lock.
- *
- * Exported so this exclusivity can be pinned directly in a test, without simulating real concurrency.
- */
-export function claimStaleLock(lockDir: string, observedMtimeMs: number): string | null {
-  const claim = `${lockDir}.stale-${process.pid}-${Math.random().toString(36).slice(2)}`;
-  renameSync(lockDir, claim);
-  if (statSync(claim).mtimeMs !== observedMtimeMs) {
-    try {
-      renameSync(claim, lockDir);
-    } catch {}
-    return null;
+  } catch {
+    return;
   }
-  return claim;
+  try {
+    renameSync(tmp, cachePath);
+  } catch {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {}
+  }
 }
 
 /**
  * `mkdir` either creates the directory or throws — atomic across processes, unlike "check then
- * write". A lock older than LOCK_STALE_MS is taken over: its owner is gone. The takeover goes through
- * `claimStaleLock`, which verifies the directory it moved is still the stale one this call observed
- * — see its doc comment for the race that guards against.
+ * write". This is intentionally NOT mutual exclusion: two rounds of trying to make a stale takeover
+ * atomic (rename-away, then verify-and-restore) each closed one interleaving and opened a narrower
+ * one — a 3-caller interleaving still lets two callers both believe they hold the lock, and a real fix
+ * needs a kernel-level advisory lock (`flock`), which a native dependency would provide but the
+ * plan's constraints forbid.
  *
- * A residual window remains even so: a loser whose OWN rename fires only after a winner's ENTIRE
- * claim-verify-recreate cycle has finished could in principle still observe a stale reading that's no
- * longer true. Closing that fully needs a real advisory lock (`flock`), out of scope here — but with
- * `refreshWeekly`'s cache write now atomic, the worst case of losing this narrower race is a
- * redundant background scan, not a corrupted cache or a torn read.
+ * So this does something weaker but actually correct: claim the lock ONLY by creating it (atomic,
+ * genuinely exclusive), and if someone else already holds it, clear it if it looks abandoned — but
+ * decline this call regardless. Nobody takes over a directory they did not create, so the
+ * double-acquire family does not shrink, it disappears. Two callers racing to clear the same corpse
+ * is idempotent (`rmSync` with `force: true`). The cost of a live-but-slow owner losing its directory
+ * to an over-eager clear is one redundant scan seconds later — harmless now that `refreshWeekly`'s
+ * cache write is atomic. This is best-effort de-duplication of a background scan, not a real lock:
+ * do not reach for it anywhere correctness depends on exclusivity.
  */
 export function acquireLock(now: number, lockDir: string): boolean {
   try {
@@ -150,14 +139,7 @@ export function acquireLock(now: number, lockDir: string): boolean {
     return true;
   } catch {}
   try {
-    const mtimeMs = statSync(lockDir).mtimeMs;
-    if (now - mtimeMs > LOCK_STALE_MS) {
-      const claim = claimStaleLock(lockDir, mtimeMs);
-      if (claim === null) return false;
-      rmSync(claim, { recursive: true, force: true });
-      mkdirSync(lockDir);
-      return true;
-    }
+    if (now - statSync(lockDir).mtimeMs > LOCK_STALE_MS) rmSync(lockDir, { recursive: true, force: true });
   } catch {}
   return false;
 }

@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { acquireLock, claimStaleLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
+import { acquireLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
 import type { Usage } from "../src/cost";
 
 const NOW = Date.parse("2026-08-10T08:00:00Z");
@@ -111,49 +111,20 @@ test("a held lock blocks a second refresh", () => {
   expect(acquireLock(NOW, lock)).toBe(true);
 });
 
-test("a lock left behind by a dead process is reaped", () => {
+test("a corpse left behind by a dead process is cleared, but this call still declines", () => {
   const lock = join(mkdtempSync(join(tmpdir(), "kt-wstale-")), "lock");
   mkdirSync(lock);
   const old = new Date(NOW - 121_000);
   utimesSync(lock, old, old);
+
+  // acquireLock does not take over a directory it did not create -- clearing a corpse and claiming it
+  // in the same call is exactly the shape that let two callers both believe they held the lock across
+  // rounds 1 and 2. This call only clears; it does not claim.
+  expect(acquireLock(NOW, lock)).toBe(false);
+  expect(existsSync(lock)).toBe(false);
+
+  // The very next call sees an empty path and acquires cleanly through the plain, atomic `mkdirSync`.
   expect(acquireLock(NOW, lock)).toBe(true);
-});
-
-test("claiming a stale lock is atomic: a second claim on the same directory throws", () => {
-  const lock = join(mkdtempSync(join(tmpdir(), "kt-wclaim-")), "lock");
-  mkdirSync(lock);
-  const old = new Date(NOW - 121_000);
-  utimesSync(lock, old, old);
-  const observedMtimeMs = statSync(lock).mtimeMs;
-
-  // Two callers whose statSync both saw the same stale mtime would, in a real race, both reach this
-  // exact point before either one mutates. Replaying the claim twice back-to-back with no recreate in
-  // between is that interleaving: `rename` requires its source to exist, so only the first call can
-  // find `lock` still there — the bug this closed was that the old rm+mkdir pair let BOTH succeed
-  // (rmSync's `force: true` never throws on an already-missing target).
-  const claim = claimStaleLock(lock, observedMtimeMs); // caller A wins the claim
-  expect(claim).not.toBeNull();
-  expect(() => claimStaleLock(lock, observedMtimeMs)).toThrow(); // caller B's source is already gone
-  rmSync(claim!, { recursive: true, force: true }); // acquireLock does this cleanup itself; replicate it here
-});
-
-test("a reap against a stale mtime someone else already replaced does not steal the lock", () => {
-  const lock = join(mkdtempSync(join(tmpdir(), "kt-wracer2-")), "lock");
-  mkdirSync(lock);
-  const old = new Date(NOW - 121_000);
-  utimesSync(lock, old, old);
-  const observedStale = statSync(lock).mtimeMs; // what BOTH callers would have seen before either mutated
-
-  // Caller A runs the real, full acquireLock cycle and legitimately wins.
-  expect(acquireLock(NOW, lock)).toBe(true);
-
-  // Caller B decided "stale" from that SAME earlier read. Replaying its reap against the mtime it
-  // observed — now that A's fresh lock sits at `lock` — must fail, and must leave A's lock intact.
-  // `rename`'s "source must exist" guarantee alone does NOT catch this: it happily moves whatever is
-  // currently there, stale or not, so a naive claim would silently steal A's fresh directory.
-  expect(claimStaleLock(lock, observedStale)).toBeNull();
-  expect(existsSync(lock)).toBe(true);
-  expect(statSync(lock).mtimeMs).not.toBe(observedStale); // still A's fresh dir, correctly restored
 });
 
 test("refreshWeekly's atomic write leaves no temp file behind", () => {
@@ -165,4 +136,18 @@ test("refreshWeekly's atomic write leaves no temp file behind", () => {
   // The write goes to a private temp file next to the cache, then a rename swaps it into place — if
   // that rename is ever dropped, a stray "kt-weekly.json.tmp-..." would be left sitting next to it.
   expect(readdirSync(dirname(cachePath))).toEqual(["kt-weekly.json"]);
+});
+
+test("refreshWeekly cleans up its temp file when the final rename fails", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-wrefresh3-"));
+  const dir = mkdtempSync(join(tmpdir(), "kt-wout3-"));
+  const cachePath = join(dir, "kt-weekly.json");
+  mkdirSync(cachePath); // occupies the cache path with a directory, so renaming a FILE onto it (EISDIR) fails
+
+  refreshWeekly(NOW, { root, configPath: join(tmpdir(), "kt-none3.json"), cachePath }, PRICING);
+
+  // The write succeeded; only the rename failed. No stray "kt-weekly.json.tmp-..." should survive next
+  // to the (untouched) directory that occupies the cache path.
+  expect(readdirSync(dir)).toEqual(["kt-weekly.json"]);
+  expect(statSync(cachePath).isDirectory()).toBe(true);
 });
