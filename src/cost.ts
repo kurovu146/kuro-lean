@@ -237,9 +237,10 @@ export function collectUsage(dir: string): Usage[] {
  * is 6.3 MB and the largest is 20.6 MB, so it does not fire in ordinary use.
  *
  * It is not free when it does fire — a skipped file's usage is missing from the week with no cue on
- * the line, and a 10 MB cap would already have dropped 8% of one real week's tokens ($363 of $5,046).
- * A week's spend that quietly reads low is worse than a slow scan, which is why the number sits where
- * it does. Reading less, rather than skipping more, needs line-wise parsing.
+ * the line, and the biggest transcripts belong to the longest sessions, which is where the money is.
+ * A week's spend that quietly reads low is worse than a slow scan, which is why the cap sits above
+ * the observed range instead of being tuned down. Reading less, rather than skipping more, needs
+ * line-wise parsing.
  */
 export const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
 
@@ -258,8 +259,9 @@ export function collectUsageSince(
   root: string = join(homedir(), ".claude", "projects"),
 ): Usage[] {
   const rows: Usage[] = [];
-  // Shared across every project: the same reply routinely appears in transcripts of DIFFERENT
-  // projects, so a per-file set would miss most of the repeats.
+  // Shared across the whole walk rather than per file: 12% of replies appear in more than one
+  // transcript, so a per-file map would miss those repeats entirely. (Measured, they stay within one
+  // project — the set spans projects only because that costs nothing and a copy is cheap to catch.)
   const seen = new Map<string, number>();
   for (const f of jsonlFiles(root)) {
     try {

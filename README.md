@@ -45,7 +45,7 @@ Every number in this README is measured, not estimated — including the ones th
 |---|---|---|
 | 🗜️ **Compress** | `kt run -- <cmd>` prints a squashed version of noisy output and stores the full log | A 21k-char diff becomes 500 chars. Test failures are **never** compressed away |
 | 🚧 **Guard** | Denies `find /`, `cat` on a 5 MB file, whole lock files, `git log -p`… | The cheapest token is the one that never enters the context |
-| 💸 **Price** | `kt cost` shows the real bill from your transcripts; the status line prices the turn you are about to send | 89% of the bill is cache read + cache write, not output. Most people optimise the wrong thing |
+| 💸 **Price** | `kt cost` shows the real bill from your transcripts; the status line prices the turn you are about to send | 87% of the bill is cache read + cache write, not output. Most people optimise the wrong thing |
 | 🛟 **Rescue** | `kt handoff --recover` rebuilds a dead session from the on-disk transcript for ~2.5k tokens | The prompt cache expires after 1 hour. The transcript does not |
 
 It works in two layers:
@@ -178,19 +178,21 @@ where the money actually goes — usually not the same place.
 
 ```console
 $ kt cost
-Cost derived from real usage · total ~$92.31
+Cost derived from real usage · total ~$331.35
 
-  cache read      $35.30  38% ·  70.6M tok · 0.1× input · the context re-read on EVERY turn
-  cache write     $33.00  36% ·   3.3M tok · 2× input · once per token loaded
-  output          $24.00  26% ·  0.96M tok · what the model writes
-  fresh input      $0.01   0% ·     2k tok · not cached yet
+  cache read     $162.47  49% · 342.5M tok · 0.1× input · the context re-read on EVERY turn
+  cache write    $103.75  31% ·  11.3M tok · 2× input · once per token loaded
+  output          $65.07  20% ·   2.7M tok · what the model writes
+  fresh input      $0.07   0% ·    19k tok · not cached yet
 
 By model:
-      $92.31 · 74.9M tok · claude-opus-5
+     $300.46 · 310.6M tok · claude-opus-5
+      $30.73 ·  45.4M tok · claude-sonnet-5
+       $0.17 ·   575k tok · claude-haiku-4-5-20251001
 ```
 
-*(Sample figures, real proportions — the 38/36/26 split is the measured one, see
-[Where the money goes](#where-the-money-goes). Run it on your own project for your own numbers.)*
+*(A real run on this repo, not an illustration — the 49/31/20 split is what it printed. Run it on
+your own project for your own numbers.)*
 
 Read from the Claude Code transcripts for this project (main session **and** subagents). Prices
 come from `pricing` in `kt.json`, matched by model-id prefix; a model with no entry is skipped
