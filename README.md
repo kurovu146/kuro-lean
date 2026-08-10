@@ -12,7 +12,7 @@ prompt cache has expired.
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black?logo=bun&logoColor=white)](https://bun.sh)
 ![Tests](https://img.shields.io/badge/tests-261%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 
 **[Install](#install)** · **[Commands](#commands)** · **[Where the money goes](#where-the-money-goes)** · **[Benchmarks](#benchmarks)** · **[Configuration](#configuration)**
 
