@@ -90,6 +90,68 @@ function usageLine(ts: string, model: string, out: number): string {
   });
 }
 
+/** One assistant reply as Claude Code writes it: identified by message.id + requestId. */
+function identifiedLine(ts: string, id: string, req: string, out: number): string {
+  return JSON.stringify({
+    timestamp: ts,
+    requestId: req,
+    message: { id, model: "claude-opus-5", usage: { input_tokens: 10, output_tokens: out, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+  });
+}
+
+// Claude Code rewrites earlier messages into a new transcript when a session is resumed, forked or
+// compacted, so the same reply is on disk many times over. Measured on one real quota week: 24,344
+// rows collapsing to 9,711 - 57% of the tokens were the same messages counted again. Billing them
+// repeatedly is what made the week read 5.24B against ccusage's 2.24B.
+test("the same message in two transcripts is billed once", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-dupe-"));
+  mkdirSync(join(root, "-proj-a"));
+  mkdirSync(join(root, "-proj-b"));
+  const line = identifiedLine("2026-08-09T00:00:00Z", "msg_01", "req_01", 500);
+  writeFileSync(join(root, "-proj-a", "s.jsonl"), line);
+  writeFileSync(join(root, "-proj-b", "resumed.jsonl"), line);
+
+  const rows = collectUsageSince(0, root);
+
+  expect(rows.length).toBe(1);
+  expect(rows[0]!.output).toBe(500);
+});
+
+test("a message repeated inside one transcript is billed once", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-dupe1-"));
+  mkdirSync(join(root, "-proj"));
+  const line = identifiedLine("2026-08-09T00:00:00Z", "msg_02", "req_02", 7);
+  writeFileSync(join(root, "-proj", "s.jsonl"), [line, line, line].join("\n"));
+
+  expect(collectUsageSince(0, root).length).toBe(1);
+});
+
+test("same message id, different requests => two real replies, both billed", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-dupe2-"));
+  mkdirSync(join(root, "-proj"));
+  writeFileSync(
+    join(root, "-proj", "s.jsonl"),
+    [identifiedLine("2026-08-09T00:00:00Z", "msg_03", "req_a", 1),
+     identifiedLine("2026-08-09T00:00:01Z", "msg_03", "req_b", 2)].join("\n"),
+  );
+
+  expect(collectUsageSince(0, root).length).toBe(2);
+});
+
+test("rows without an id are never collapsed into each other", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-dupe3-"));
+  mkdirSync(join(root, "-proj"));
+  // Real usage that simply carries no identity: dropping it would understate the bill, which is a
+  // worse error than counting an unidentifiable row twice.
+  writeFileSync(
+    join(root, "-proj", "s.jsonl"),
+    [usageLine("2026-08-09T00:00:00Z", "claude-opus-5", 3),
+     usageLine("2026-08-09T00:00:01Z", "claude-opus-5", 4)].join("\n"),
+  );
+
+  expect(collectUsageSince(0, root).length).toBe(2);
+});
+
 test("collectUsageSince keeps rows inside the window, drops older ones", () => {
   const root = mkdtempSync(join(tmpdir(), "kt-since-"));
   mkdirSync(join(root, "-proj-a"));
