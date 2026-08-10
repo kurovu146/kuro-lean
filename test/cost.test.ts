@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { priceOf, tallyUsage, renderCost, perTurnCost, collectUsageSince, fmtTok, type Usage } from "../src/cost";
+import { priceOf, tallyUsage, renderCost, perTurnCost, collectUsageSince, fmtTok, MAX_TRANSCRIPT_BYTES, type Usage } from "../src/cost";
 import { defaultConfig } from "../src/config";
 
 const P = defaultConfig.pricing;
@@ -118,6 +118,24 @@ test("collectUsageSince never opens a file untouched since the window began", ()
   const rows = collectUsageSince(Date.parse("2026-08-07T00:00:00Z"), root);
 
   expect(rows.length).toBe(0);
+});
+
+test("collectUsageSince skips a transcript past the size cap, and reads the same one under it", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-cap-"));
+  mkdirSync(join(root, "-proj-d"));
+  const small = join(root, "-proj-d", "small.jsonl");
+  const big = join(root, "-proj-d", "big.jsonl");
+  const line = usageLine("2026-08-09T00:00:00Z", "claude-opus-5", 42);
+  writeFileSync(small, line);
+
+  // Same usage row, then padding that carries the file past the cap. The padding is an unparseable
+  // line in both runs below, so the ONLY thing that can move the count is the size gate.
+  writeFileSync(big, line + "\n");
+  appendFileSync(big, Buffer.alloc(MAX_TRANSCRIPT_BYTES, 0x78));
+  expect(collectUsageSince(0, root).length).toBe(1);
+
+  writeFileSync(big, line + "\n" + "x");
+  expect(collectUsageSince(0, root).length).toBe(2);
 });
 
 test("collectUsageSince keeps a row whose entry has no timestamp", () => {

@@ -195,11 +195,29 @@ export function collectUsage(dir: string): Usage[] {
 }
 
 /**
+ * A single transcript larger than this is skipped by the roll-up.
+ *
+ * Nothing here streams: a file is read whole and then split, so one pathological transcript becomes a
+ * string twice its size plus a line array before a single row comes out — inside a detached process
+ * nobody is watching. This is a heap guard against that one file, deliberately set above the real
+ * range rather than tuned down: measured over 2,016 transcripts (1.12 GB) the median is 0.24 MB, p99
+ * is 6.3 MB and the largest is 20.6 MB, so it does not fire in ordinary use.
+ *
+ * It is not free when it does fire — a skipped file's usage is missing from the week with no cue on
+ * the line, and a 10 MB cap would already have dropped 8% of one real week's tokens ($363 of $5,046).
+ * A week's spend that quietly reads low is worse than a slow scan, which is why the number sits where
+ * it does. Reading less, rather than skipping more, needs line-wise parsing.
+ */
+export const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+
+/**
  * Usage across EVERY project since `since` (epoch ms) — the week's roll-up.
  *
  * A file untouched since the window began cannot hold usage inside it, so it is never opened. That
- * one `statSync` is the whole performance story: measured 883 of 986 transcripts skipped, 1.1 GB of
- * history down to 149 MB actually read, 0.53s total.
+ * one `statSync` is the whole performance story: measured on 2,016 transcripts (1.12 GB), 230 files /
+ * 245 MB are in a live window, ~0.5–0.8s and ~290 MB peak RSS. When the mtime filter is defeated —
+ * a restore from backup, an `rsync`, or copying `~/.claude` to a new machine, all of which restamp
+ * every file — nothing is skipped and the same scan costs ~3.4–4.1s and ~430 MB.
  */
 export function collectUsageSince(
   since: number,
@@ -208,7 +226,8 @@ export function collectUsageSince(
   const rows: Usage[] = [];
   for (const f of jsonlFiles(root)) {
     try {
-      if (statSync(f).mtimeMs < since) continue;
+      const st = statSync(f);
+      if (st.mtimeMs < since || st.size > MAX_TRANSCRIPT_BYTES) continue;
       parseUsageInto(readFileSync(f, "utf8"), rows, since);
     } catch {
       continue;
