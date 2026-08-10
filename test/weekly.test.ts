@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { acquireLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
+import { acquireLock, claimStaleLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
 import type { Usage } from "../src/cost";
 
 const NOW = Date.parse("2026-08-10T08:00:00Z");
@@ -74,6 +74,16 @@ test("a corrupt or missing cache hides the segment and asks for a refresh", () =
   expect(readWeekly(NOW, join(tmpdir(), "kt-no-cache.json"))).toEqual({ line: null, stale: true });
 });
 
+test("a cache missing writtenAtMs hides the line too, not just its age", () => {
+  const p = cacheFile(JSON.stringify({ line: "💵 wk $1.0k 5.0M" }));
+  expect(readWeekly(NOW, p)).toEqual({ line: null, stale: true });
+});
+
+test("a non-numeric writtenAtMs is treated the same as missing", () => {
+  const p = cacheFile(JSON.stringify({ writtenAtMs: "not a number", line: "💵 wk $1.0k 5.0M" }));
+  expect(readWeekly(NOW, p)).toEqual({ line: null, stale: true });
+});
+
 test("refreshWeekly scans the transcripts and writes the line", () => {
   const root = mkdtempSync(join(tmpdir(), "kt-wrefresh-"));
   mkdirSync(join(root, "-proj"));
@@ -107,4 +117,20 @@ test("a lock left behind by a dead process is reaped", () => {
   const old = new Date(NOW - 121_000);
   utimesSync(lock, old, old);
   expect(acquireLock(NOW, lock)).toBe(true);
+});
+
+test("claiming a stale lock is atomic: a second claim on the same directory throws", () => {
+  const lock = join(mkdtempSync(join(tmpdir(), "kt-wclaim-")), "lock");
+  mkdirSync(lock);
+  const old = new Date(NOW - 121_000);
+  utimesSync(lock, old, old);
+
+  // Two callers whose statSync both saw the same stale mtime would, in a real race, both reach this
+  // exact point before either one mutates. Replaying the claim twice back-to-back with no recreate in
+  // between is that interleaving: `rename` requires its source to exist, so only the first call can
+  // find `lock` still there — the bug this closes was that the old rm+mkdir pair let BOTH succeed
+  // (rmSync's `force: true` never throws on an already-missing target).
+  const claim = claimStaleLock(lock); // caller A wins the claim
+  expect(() => claimStaleLock(lock)).toThrow(); // caller B's source is already gone
+  rmSync(claim, { recursive: true, force: true }); // acquireLock does this cleanup itself; replicate it here
 });

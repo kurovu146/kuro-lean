@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { collectUsageSince, fmtTok, tallyUsage, type PricingTable, type Usage } from "./cost";
@@ -70,8 +70,11 @@ export function readWeekly(
 ): { line: string | null; stale: boolean } {
   try {
     const c = JSON.parse(readFileSync(cachePath, "utf8"));
-    const line = typeof c?.line === "string" ? c.line : null;
-    return { line, stale: !c?.writtenAtMs || now - c.writtenAtMs > WEEKLY_TTL_MS };
+    // A missing/non-numeric writtenAtMs means there is no trustworthy age for the line, so the line
+    // itself is withheld too — a string sitting next to garbage metadata is not a line worth showing.
+    if (typeof c?.writtenAtMs !== "number") return { line: null, stale: true };
+    const line = typeof c.line === "string" ? c.line : null;
+    return { line, stale: now - c.writtenAtMs > WEEKLY_TTL_MS };
   } catch {
     return { line: null, stale: true };
   }
@@ -91,8 +94,24 @@ export function refreshWeekly(
 }
 
 /**
+ * Move a stale lock directory out of the way, atomically. `rename` requires its source to exist, so
+ * when two callers both saw the same stale mtime and race here, only the first finds `lockDir` still
+ * there — the second throws. That is the property `rmSync` + `mkdirSync` did NOT have: `rmSync(...,
+ * { force: true })` never throws on a missing target, so a second racer's "remove" silently no-ops
+ * on air and its "create" happily recreates — both callers walked away believing they held the lock.
+ * Exported so the exclusivity itself can be pinned directly, without simulating real concurrency.
+ */
+export function claimStaleLock(lockDir: string): string {
+  const claim = `${lockDir}.stale-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  renameSync(lockDir, claim);
+  return claim;
+}
+
+/**
  * `mkdir` either creates the directory or throws — atomic across processes, unlike "check then
- * write". A lock older than LOCK_STALE_MS is taken over: its owner is gone.
+ * write". A lock older than LOCK_STALE_MS is taken over: its owner is gone. The takeover itself goes
+ * through `claimStaleLock` rather than `rmSync` + `mkdirSync` directly, since only the rename is
+ * atomic — see its doc comment for the race that closes.
  */
 export function acquireLock(now: number, lockDir: string): boolean {
   try {
@@ -101,7 +120,8 @@ export function acquireLock(now: number, lockDir: string): boolean {
   } catch {}
   try {
     if (now - statSync(lockDir).mtimeMs > LOCK_STALE_MS) {
-      rmSync(lockDir, { recursive: true, force: true });
+      const claim = claimStaleLock(lockDir);
+      rmSync(claim, { recursive: true, force: true });
       mkdirSync(lockDir);
       return true;
     }
