@@ -80,7 +80,14 @@ export function readWeekly(
   }
 }
 
-/** Scan the week and write the cache. Runs in a detached child, never on the statusline's path. */
+/**
+ * Scan the week and write the cache. Runs in a detached child, never on the statusline's path.
+ *
+ * The write itself goes to a private temp file next to the cache, then a `renameSync` swaps it into
+ * place. Rename within one directory is atomic, so a concurrent `readWeekly` sees either the old
+ * complete file or the new one — never a half-written JSON blob from two refreshes interleaving. Two
+ * refreshes racing now just costs a duplicated scan, nothing worse.
+ */
 export function refreshWeekly(
   now: number,
   paths: { root?: string; configPath?: string; cachePath?: string },
@@ -88,30 +95,54 @@ export function refreshWeekly(
 ): void {
   const rows = collectUsageSince(cycleStart(now, paths.configPath), paths.root);
   const line = formatWeekly(rows, table);
+  const cachePath = paths.cachePath ?? weeklyCachePath();
   try {
-    writeFileSync(paths.cachePath ?? weeklyCachePath(), JSON.stringify({ writtenAtMs: now, line }));
+    const tmp = `${cachePath}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(tmp, JSON.stringify({ writtenAtMs: now, line }));
+    renameSync(tmp, cachePath);
   } catch {}
 }
 
 /**
- * Move a stale lock directory out of the way, atomically. `rename` requires its source to exist, so
- * when two callers both saw the same stale mtime and race here, only the first finds `lockDir` still
- * there — the second throws. That is the property `rmSync` + `mkdirSync` did NOT have: `rmSync(...,
- * { force: true })` never throws on a missing target, so a second racer's "remove" silently no-ops
- * on air and its "create" happily recreates — both callers walked away believing they held the lock.
- * Exported so the exclusivity itself can be pinned directly, without simulating real concurrency.
+ * Move a stale lock directory out of the way, atomically — and verify what got moved was actually the
+ * same stale directory the caller observed, not a fresh one a racing caller has since recreated.
+ *
+ * `rename` guarantees its source exists, so of two callers racing on the SAME originally-stale
+ * `lockDir`, only the first finds it there — that alone closes the old `rmSync` + `mkdirSync` bug
+ * (`rmSync(..., { force: true })` never throws on a missing target, so both racers could "succeed").
+ * But `rename` does not care WHAT is at the source: if caller A has already reaped-and-recreated
+ * `lockDir` by the time caller B's rename fires, B's rename still succeeds — just against A's fresh
+ * lock instead of the stale one B actually meant to reap. `observedMtimeMs` (read by the caller
+ * BEFORE this call, via the same `statSync` that decided "stale") closes that: if the claimed
+ * directory's mtime does not match what was observed, B just stole a live lock — it is put back and
+ * `null` is returned. If the restore itself collides (someone occupies `lockDir` again in the
+ * meantime), that failure is swallowed too: either way this caller does not get to hold the lock.
+ *
+ * Exported so this exclusivity can be pinned directly in a test, without simulating real concurrency.
  */
-export function claimStaleLock(lockDir: string): string {
+export function claimStaleLock(lockDir: string, observedMtimeMs: number): string | null {
   const claim = `${lockDir}.stale-${process.pid}-${Math.random().toString(36).slice(2)}`;
   renameSync(lockDir, claim);
+  if (statSync(claim).mtimeMs !== observedMtimeMs) {
+    try {
+      renameSync(claim, lockDir);
+    } catch {}
+    return null;
+  }
   return claim;
 }
 
 /**
  * `mkdir` either creates the directory or throws — atomic across processes, unlike "check then
- * write". A lock older than LOCK_STALE_MS is taken over: its owner is gone. The takeover itself goes
- * through `claimStaleLock` rather than `rmSync` + `mkdirSync` directly, since only the rename is
- * atomic — see its doc comment for the race that closes.
+ * write". A lock older than LOCK_STALE_MS is taken over: its owner is gone. The takeover goes through
+ * `claimStaleLock`, which verifies the directory it moved is still the stale one this call observed
+ * — see its doc comment for the race that guards against.
+ *
+ * A residual window remains even so: a loser whose OWN rename fires only after a winner's ENTIRE
+ * claim-verify-recreate cycle has finished could in principle still observe a stale reading that's no
+ * longer true. Closing that fully needs a real advisory lock (`flock`), out of scope here — but with
+ * `refreshWeekly`'s cache write now atomic, the worst case of losing this narrower race is a
+ * redundant background scan, not a corrupted cache or a torn read.
  */
 export function acquireLock(now: number, lockDir: string): boolean {
   try {
@@ -119,8 +150,10 @@ export function acquireLock(now: number, lockDir: string): boolean {
     return true;
   } catch {}
   try {
-    if (now - statSync(lockDir).mtimeMs > LOCK_STALE_MS) {
-      const claim = claimStaleLock(lockDir);
+    const mtimeMs = statSync(lockDir).mtimeMs;
+    if (now - mtimeMs > LOCK_STALE_MS) {
+      const claim = claimStaleLock(lockDir, mtimeMs);
+      if (claim === null) return false;
       rmSync(claim, { recursive: true, force: true });
       mkdirSync(lockDir);
       return true;
