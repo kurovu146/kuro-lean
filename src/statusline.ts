@@ -40,7 +40,7 @@ export interface Extras {
   git: GitInfo | null;
   tools: number;
   todos: { done: number; total: number } | null;
-  quota: string | null; // pre-formatted (e.g. "⏳ 3h 12m left (40% used)")
+  quota: string | null; // pre-formatted (e.g. "⏳ 3h 12m left · 📅 3d 14h left")
   plan: string | null;
   cost?: number | null; // cost of the current session only (resets on /clear); undefined => fall back to input.cost
   savedTokens?: number | null; // tokens kt has saved (from .kt/runs/index.jsonl); null/0 => hidden
@@ -107,9 +107,9 @@ function ctxLabel(size: number): string {
  * Render the status line (PURE). Line 1 comes from `input`; lines 2-3 from `extras`.
  * Without extras, only line 1 is rendered.
  * The 3-line layout, matching statusline.cjs:
- *   L1: dot model (label) · bar % · ~tok · ⏳quota · $cost
+ *   L1: dot model (label) · bar % · ~tok · $cost
  *   L2: 📁 dir · 🌿 branch ↑↓ · 📋 plan
- *   L3: 📝 +/- · ✅ todo · 🔧 tools
+ *   L3: 📝 +/- · ✅ todo · 🔧 tools · ♻️ saved · 📅 quota
  */
 export function renderStatusline(
   input: StatuslineInput,
@@ -132,7 +132,6 @@ export function renderStatusline(
   const l1: string[] = [`${dot} ${model}${showLabel ? " " + label : ""}`];
   if (pct != null) l1.push(`${bar(pct)} ${pct}%`);
   if (tokens > 0) l1.push(`~${Math.round(tokens / 1000)}k tok`);
-  if (extras?.quota) l1.push(extras.quota);
   // Prefer the session-anchored cost (resets on /clear); fall back to Claude Code's cumulative total.
   const cost = extras?.cost ?? input.cost?.total_cost_usd;
   if (cost != null) l1.push(`$${cost.toFixed(2)}`);
@@ -171,6 +170,8 @@ export function renderStatusline(
       const t = extras.savedTokens;
       l3.push(`♻️ ~${t >= 1000 ? `${Math.round(t / 1000)}k` : t} saved`);
     }
+    // Last: the quota clock sits at the end of L3, where a weekly-usage segment gets appended.
+    if (extras.quota) l3.push(extras.quota);
     if (l3.length) lines.push(l3.join(" · "));
   }
 
@@ -297,21 +298,36 @@ function fmtMsLeft(ms: number): string {
   if (ms < 0) return "";
   const m = Math.floor(ms / 60000);
   if (m < 60) return `${m}m left`;
-  return `${Math.floor(m / 60)}h ${m % 60}m left`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m left`;
+  return `${Math.floor(h / 24)}d ${h % 24}h left`;
 }
 
-/** The 5-hour quota from the CK-stack cache (when present). `now` is injectable for tests. */
-export function readQuota(now: number = Date.now()): string | null {
+type UsageWindow = { resets_at?: string | null } | null | undefined;
+
+/**
+ * How long is left on the usage windows Claude Code caches in `~/.claude.json` →
+ * `cachedUsageUtilization`: the 5-hour session window and the 7-day one.
+ *
+ * Countdowns only. The `utilization` percentages sitting next to them are a snapshot Claude Code
+ * refetches on its own schedule - it read 36% for five hours while `/usage` said 43%, which is worse
+ * than no number at all. `resets_at` is an absolute timestamp, so the countdown stays exact no matter
+ * how old the snapshot is. `now` and the config path are injectable for tests.
+ */
+export function readQuota(
+  now: number = Date.now(),
+  configPath: string = join(homedir(), ".claude.json"),
+): string | null {
   try {
-    const q = JSON.parse(readFileSync(join(tmpdir(), "ck-usage-limits-cache.json"), "utf8"));
-    if (!q || q.status === "unavailable") return null;
-    const resetsAt = q.resets_at_ms ?? q.resetsAtMs;
-    const pct = q.percent_used ?? q.percentUsed;
-    if (!resetsAt) return null;
-    const lbl = fmtMsLeft(resetsAt - now);
-    if (!lbl) return null;
-    const tail = pct != null ? ` (${pct}% used)` : "";
-    return `⏳ ${lbl}${tail}`;
+    const u = JSON.parse(readFileSync(configPath, "utf8"))?.cachedUsageUtilization?.utilization;
+    if (!u) return null;
+    const seg = (icon: string, w: UsageWindow): string | null => {
+      if (!w?.resets_at) return null;
+      const lbl = fmtMsLeft(Date.parse(w.resets_at) - now); // "" once the window has reset => drop it
+      return lbl ? `${icon} ${lbl}` : null;
+    };
+    const parts = [seg("⏳", u.five_hour), seg("📅", u.seven_day)].filter(Boolean);
+    return parts.length ? parts.join(" · ") : null;
   } catch {
     return null;
   }

@@ -3,7 +3,7 @@ import { writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createHash } from "crypto";
-import { renderStatusline, collectGit, sessionCost, collectSavedTokens, type Extras } from "../src/statusline";
+import { renderStatusline, collectGit, sessionCost, collectSavedTokens, readQuota, type Extras } from "../src/statusline";
 import { appendMeta } from "../src/store";
 import { rmSync, mkdirSync } from "fs";
 
@@ -80,13 +80,13 @@ test("used_percentage = null (after /clear) => white dot, no 'null%'", () => {
   expect(s).toContain("$0.00");
 });
 
-test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () => {
+test("all 3 lines: cost(L1) · dir/branch/plan(L2) · diff/todo/tools/quota(L3)", () => {
   const extras: Extras = {
     dir: `${HOME}/Dev/kuro-lean`,
     git: { branch: "main", ahead: 1, behind: 0, added: 12, removed: 3 },
     tools: 8,
     todos: { done: 2, total: 5 },
-    quota: "⏳ 3h 12m left (40% used)",
+    quota: "📅 3d 13h left",
     plan: "refactor-auth",
   };
   const s = renderStatusline(
@@ -96,9 +96,9 @@ test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () 
     HOME,
   );
   const [l1, l2, l3] = s.split("\n");
-  // L1: quota comes before cost
-  expect(l1).toContain("⏳ 3h 12m left (40% used)");
+  // L1: money, not the quota clock
   expect(l1).toContain("$0.50");
+  expect(l1).not.toContain("📅");
   // L2
   expect(l2).toContain("📁 ~/Dev/kuro-lean");
   expect(l2).toContain("🌿 main");
@@ -108,6 +108,18 @@ test("all 3 lines: quota(L1) · dir/branch/plan(L2) · diff/todo/tools(L3)", () 
   expect(l3).toContain("📝 +12 -3");
   expect(l3).toContain("✅ 2/5");
   expect(l3).toContain("🔧 8 tools");
+});
+
+test("quota sits last on L3 - the week's clock belongs next to the week's usage", () => {
+  const s = renderStatusline(
+    { context_window: { used_percentage: 10, context_window_size: 200000 } },
+    cfg,
+    { dir: "/tmp/x", git: null, tools: 8, todos: null, quota: "📅 3d 13h left", plan: null, savedTokens: 130000 },
+    HOME,
+  );
+  const l3 = s.split("\n")[2]!;
+  expect(l3.endsWith("📅 3d 13h left")).toBe(true);
+  expect(l3.indexOf("♻️")).toBeLessThan(l3.indexOf("📅"));
 });
 
 test("minimal extras (dir only) => L1 + L2(dir), no L3", () => {
@@ -288,4 +300,62 @@ test("idle below the threshold => hidden entirely (don't clutter the status line
   );
   expect(s).not.toContain("m ·");
   expect(s).not.toContain("3m");
+});
+
+// --- quota (~/.claude.json → cachedUsageUtilization) ---------------------------------------
+// the config path is injected, never homedir() - the same reason as HOME above
+const NOW = Date.parse("2026-08-10T08:00:00Z");
+
+/** Writes a ~/.claude.json-shaped fixture and returns its path. */
+function writeQuotaFixture(name: string, utilization: unknown, fetchedAtMs = NOW): string {
+  const p = join(tmpdir(), `kt-quota-test-${name}.json`);
+  writeFileSync(p, JSON.stringify({ cachedUsageUtilization: { fetchedAtMs, utilization } }));
+  return p;
+}
+
+test("weekly window => days left, countdown only", () => {
+  const p = writeQuotaFixture("weekly", {
+    seven_day: { utilization: 36, resets_at: "2026-08-13T22:00:00.031644+00:00" },
+  });
+  expect(readQuota(NOW, p)).toBe("📅 3d 14h left");
+});
+
+test("both windows => 5-hour first, then the week", () => {
+  const p = writeQuotaFixture("both", {
+    five_hour: { utilization: 12, resets_at: "2026-08-10T11:50:00Z" },
+    seven_day: { utilization: 36, resets_at: "2026-08-13T22:00:00Z" },
+  });
+  expect(readQuota(NOW, p)).toBe("⏳ 3h 50m left · 📅 3d 14h left");
+});
+
+test("expired 5-hour window is dropped, the week still shows", () => {
+  const p = writeQuotaFixture("expired", {
+    five_hour: { utilization: 12, resets_at: "2026-08-10T06:50:00Z" },
+    seven_day: { utilization: 36, resets_at: "2026-08-13T22:00:00Z" },
+  });
+  expect(readQuota(NOW, p)).toBe("📅 3d 14h left");
+});
+
+// The percentage in the cache goes stale for hours (Claude Code refetches on its own schedule) and
+// showed 36% while /usage said 43%. The countdown is computed from an absolute timestamp, so it
+// stays exact however old the snapshot is - that is the only part worth printing.
+test("stale snapshot => countdown unaffected, no percentage to be wrong about", () => {
+  const p = writeQuotaFixture(
+    "stale",
+    { seven_day: { utilization: 36, resets_at: "2026-08-13T22:00:00Z" } },
+    NOW - 5 * 3600_000,
+  );
+  expect(readQuota(NOW, p)).toBe("📅 3d 14h left");
+});
+
+test("under a day left => hours, not '0d'", () => {
+  const p = writeQuotaFixture("hours", {
+    seven_day: { utilization: 88, resets_at: "2026-08-10T20:30:00Z" },
+  });
+  expect(readQuota(NOW, p)).toBe("📅 12h 30m left");
+});
+
+test("no config / no cached usage => null, nothing rendered", () => {
+  expect(readQuota(NOW, join(tmpdir(), "kt-quota-test-missing.json"))).toBeNull();
+  expect(readQuota(NOW, writeQuotaFixture("empty", {}))).toBeNull();
 });

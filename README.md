@@ -469,7 +469,7 @@ then send another.
 `kt status` reads Claude Code's JSON on stdin and renders three lines:
 
 ```
-🟢 Opus 5 (1M context) · ▰▰▰▱▱▱▱▱▱▱ 32% · ~320k tok · ⏳ 2h 15m left (41% used) · $12.40 · $1.60/turn · ❄️ 2h15 · reload ~$5.00
+🟢 Opus 5 (1M context) · ▰▰▰▱▱▱▱▱▱▱ 32% · ~320k tok · ⏳ 2h 15m left · 📅 3d 14h left · $12.40 · $1.60/turn · ❄️ 2h15 · reload ~$5.00
 📁 ~/Dev/kuro-lean · 🌿 main ↑2 · 📋 refactor sessions
 📝 +142 -37 · ✅ 3/7 · 🔧 18 tools · ♻️ ~15k saved
 ```
@@ -481,7 +481,8 @@ then send another.
 | `🕐 42m` | The session has been silent that long (measured from the last message, not the file's mtime). Shown past 10 minutes |
 | `❄️ 2h15 · reload ~$5.00` | The 1-hour cache TTL has expired: the next turn re-writes the whole context at 2× input, and that is the bill. **This is a receipt, not a warning** — it can only appear once a turn has been sent. `kt hook-prompt` is the part that gets there in time |
 | `♻️ ~15k saved` | Tokens saved by kt for this project (same data as `kt stats`, ≈ chars/4). Hidden until the first compressed run |
-| ⏳ quota · 📋 plan · ✅ todo | From the CK-stack cache / transcript when available; auto-hidden otherwise |
+| `⏳ 3h 12m left` · `📅 3d 14h left` | Time left on your Claude usage windows — the 5-hour one and the **week** — read from `~/.claude.json` (`cachedUsageUtilization`). A window that has already reset is dropped. Countdowns only, deliberately: the `utilization` percentages in that file are a snapshot Claude Code refetches on its own schedule and can sit hours behind `/usage`, while `resets_at` is absolute and stays exact |
+| 📋 plan · ✅ todo | From the CK-stack cache / transcript when available; auto-hidden otherwise |
 
 ## Compatibility with other AI tools
 
