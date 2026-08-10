@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { compressGit } from "../src/compressors/git";
 import type { CompressInput } from "../src/compressors/types";
 
-test("git diff LỚN => per-file +/- stat", () => {
+test("git diff LARGE => per-file +/- stat", () => {
   const input: CompressInput = {
     stdout: readFileSync("test/fixtures/git-diff.txt", "utf8"),
     stderr: "", exitCode: 0, command: "git diff",
@@ -22,7 +22,7 @@ test("a SMALL git diff => keep the content verbatim (Claude needs to read it)", 
     stderr: "", exitCode: 0, command: "git diff",
   };
   const r = compressGit(input); // default threshold 40 > 16 lines
-  expect(r.text).toContain("@@");        // giữ hunk
+  expect(r.text).toContain("@@");        // hunk kept
   expect(r.text).toContain("+const y = 2;");
 });
 

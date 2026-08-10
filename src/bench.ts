@@ -293,5 +293,5 @@ export async function runBench(
     if (!opts.keep) rmSync(root, { recursive: true, force: true });
   }
   const report = formatReport(summaries[0]!, summaries[1]!);
-  return opts.keep ? `${report}\nworkspaces giữ ở: ${root}\n` : `${report}\n`;
+  return opts.keep ? `${report}\nworkspaces kept at: ${root}\n` : `${report}\n`;
 }

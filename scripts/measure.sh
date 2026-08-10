@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Đo tiết kiệm token thực tế của kt trên các lệnh dev thật.
-# Token ước lượng ~ chars/4 (xấp xỉ tokenizer). So output thô vs output đã nén qua `kt run`.
+# Measure the real token savings of kt on actual dev commands.
+# Token estimate ~ chars/4 (a tokenizer approximation). Raw output vs output compressed by `kt run`.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,7 +10,7 @@ if ! command -v kt >/dev/null 2>&1; then KT="bun run $PWD/src/cli.ts"; fi
 chars() { printf '%s' "$1" | wc -c | tr -d ' '; }
 lines() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
 
-printf "| %-26s | %8s | %8s | %8s | %6s |\n" "Lệnh" "raw ch" "kt ch" "saved" "ratio"
+printf "| %-26s | %8s | %8s | %8s | %6s |\n" "Command" "raw ch" "kt ch" "saved" "ratio"
 printf "|%s|%s|%s|%s|%s|\n" "----------------------------" "----------" "----------" "----------" "--------"
 
 run_case() {

@@ -138,7 +138,7 @@ export function runDoctor(home: string = homedir()): string {
     lines.push(`hook-compress: ${cmds.includes("kt hook-compress") ? "✓" : "✗"}`);
     const promptCmds = (cfg.hooks?.UserPromptSubmit ?? []).flatMap((b: Matcher) => b.hooks?.map((h) => h.command) ?? []);
     lines.push(`hook-prompt:  ${promptCmds.includes("kt hook-prompt") ? "✓" : "✗"}`);
-    lines.push(`permission kt run: ${allow.includes("Bash(kt run:*)") ? "✓" : "✗ (thiếu Bash(kt run:*) trong permissions.allow)"}`);
+    lines.push(`permission kt run: ${allow.includes("Bash(kt run:*)") ? "✓" : "✗ (missing Bash(kt run:*) in permissions.allow)"}`);
   }
   for (const name of ["concise-output", "lean-code"]) {
     const skillPath = join(home, ".claude", "skills", name, "SKILL.md");

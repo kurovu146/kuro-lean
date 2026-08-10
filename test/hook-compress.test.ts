@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { decideCompress } from "../src/hooks/compress";
 
-test("lệnh test => rewrite sang kt run", () => {
+test("test command => rewritten to kt run", () => {
   // isolation: if the env inherits KT_DISABLE=1 (e.g. running it with that variable set)
   // the kill switch returns null -> this test would fail spuriously. Unset it to check default behaviour.
   const saved = process.env.KT_DISABLE;
@@ -109,11 +109,11 @@ test("an env prefix + watch => still null (wrapping would hang)", () => {
   expect(decideCompress("CI=1 tsc --watch")).toBeNull();
 });
 
-test("env-prefix + lệnh generic => vẫn wrap qua bash -c", () => {
+test("env-prefix + generic command => still wrapped via bash -c", () => {
   expect(decideCompress("FOO=1 echo hi")).toBe("kt run -- bash -c 'FOO=1 echo hi'");
 });
 
-test("lệnh lint => rewrite sang kt run", () => {
+test("lint command => rewritten to kt run", () => {
   expect(decideCompress("eslint src")).toBe("kt run -- eslint src");
 });
 
@@ -133,6 +133,6 @@ test("yarn dev => null (no longer mistaken for install)", () => {
   expect(decideCompress("yarn start")).toBeNull();
 });
 
-test("newline trong lệnh => null", () => {
+test("newline in the command => null", () => {
   expect(decideCompress("npm test\necho hi")).toBeNull();
 });

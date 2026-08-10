@@ -4,7 +4,7 @@ import { rmSync } from "fs";
 
 const ROOT = "/tmp/kt-test-store";
 
-test("save rồi show theo id", () => {
+test("save then show by id", () => {
   rmSync(ROOT, { recursive: true, force: true });
   saveRun("001", "full log A", { root: ROOT });
   expect(showRun("001", ROOT)).toBe("full log A");

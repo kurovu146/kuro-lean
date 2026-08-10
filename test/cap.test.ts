@@ -4,7 +4,7 @@ import { capChars, type CompressInput } from "../src/compressors/types";
 import { defaultConfig } from "../src/config";
 
 test("capChars: below the cap => untouched", () => {
-  expect(capChars("ngắn", 100)).toBe("ngắn");
+  expect(capChars("short", 100)).toBe("short");
 });
 
 test("capChars: maxChars <= 0 => cap disabled, untouched", () => {
@@ -15,7 +15,7 @@ test("capChars: maxChars <= 0 => cap disabled, untouched", () => {
 test("capChars: over the cap => head + tail + a kt show marker", () => {
   const text = "A".repeat(10_000) + "B".repeat(10_000);
   const out = capChars(text, 8_000);
-  expect(out.length).toBeLessThan(8_200); // trần + marker
+  expect(out.length).toBeLessThan(8_200); // cap + marker
   expect(out.startsWith("A")).toBe(true);
   expect(out.endsWith("B")).toBe(true);
   expect(out).toContain("kt show");
@@ -33,7 +33,7 @@ test("capChars: never cuts inside a surrogate pair (emoji) => no lone surrogate"
     }
     return false;
   };
-  const text = "😀".repeat(10_000); // mỗi emoji = 2 code unit
+  const text = "😀".repeat(10_000); // each emoji = 2 code units
   const out = capChars(text, 8_001); // an odd cap -> the cut lands mid-pair unless adjusted
   expect(hasLoneSurrogate(out)).toBe(false);
 });

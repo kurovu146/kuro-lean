@@ -79,16 +79,16 @@ test("gitLogP: a plain log / the flag on another command => allow", () => {
   expect(decideGuard("grep -p foo src/", g).deny).toBe(false);
 });
 
-test("gitLogP: 'git log -p' nằm trong chuỗi (vd commit message) => allow", () => {
-  expect(decideGuard('git commit -m "guard: chặn git log -p rất hay"', g).deny).toBe(false);
+test("gitLogP: 'git log -p' inside a string (e.g. a commit message) => allow", () => {
+  expect(decideGuard('git commit -m "guard: blocking git log -p works great"', g).deny).toBe(false);
   expect(decideGuard("echo git log -p", g).deny).toBe(false);
 });
 
-test("gitLogP: git log -p sau && / | vẫn deny", () => {
+test("gitLogP: git log -p after && / | still denies", () => {
   expect(decideGuard("cd src && git log -p", g).deny).toBe(true);
 });
 
-test("catBig tắt trong config => allow cat file lớn", () => {
+test("catBig disabled in config => allow cat on a large file", () => {
   setupFiles();
   const off = { ...g, rules: { ...g.rules, catBig: false } };
   expect(decideGuard(`cat ${big}`, off).deny).toBe(false);

@@ -3,7 +3,7 @@ import { compress } from "../src/compressors";
 import { defaultConfig } from "../src/config";
 import type { CompressInput } from "../src/compressors/types";
 
-test("profile tắt => generic", () => {
+test("profile disabled => generic", () => {
   const cfg = { ...defaultConfig, profiles: { ...defaultConfig.profiles, test: false } };
   const input: CompressInput = { stdout: "a\nb", stderr: "", exitCode: 0, command: "npm test" };
   const r = compress("test", input, cfg);

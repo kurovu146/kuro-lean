@@ -16,7 +16,7 @@ function freshDir(): string {
 
 // ---------- parseClaudeJson ----------
 
-test("parseClaudeJson: cộng dồn modelUsage nhiều model", () => {
+test("parseClaudeJson: sums modelUsage across several models", () => {
   const out = JSON.stringify({
     type: "result", is_error: false, total_cost_usd: 0.0123, duration_ms: 45000, num_turns: 7,
     usage: { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 },
@@ -112,7 +112,7 @@ test("prepareWorkspace: the kt arm gets .claude/settings.json with the hook, the
   expect(existsSync(`${dir}/base/package.json`)).toBe(true);
 });
 
-test("armEnv: baseline bật KT_DISABLE, kt tắt", () => {
+test("armEnv: baseline sets KT_DISABLE, the kt arm does not", () => {
   expect(armEnv("baseline", {}).KT_DISABLE).toBe("1");
   expect(armEnv("kt", { KT_DISABLE: "1" }).KT_DISABLE).toBeUndefined();
 });
@@ -160,7 +160,7 @@ test("runBench: 2 arms x N runs, correct env per arm, report built from fake met
   expect(claudeCalls.length).toBe(4); // 2 arm × 2 runs
   expect(claudeCalls.filter((c) => c.env.KT_DISABLE === "1").length).toBe(2); // baseline
   const gateCalls = calls.filter((c) => c.argv[0] === "bun");
-  expect(gateCalls.length).toBe(4); // mỗi run 1 lần gate
+  expect(gateCalls.length).toBe(4); // one gate call per run
   expect(report).toContain("baseline 2/2, kt 2/2");
   expect(report).toContain("-50%"); // cost 0.2 → 0.1
 });

@@ -22,7 +22,7 @@ test("fail => KEEP the whole error block", () => {
 
 test("fail => a run of consecutive node_modules/node:internal frames collapses to one line", () => {
   const stdout = [
-    "FAIL src/calc.test.ts > cộng",
+    "FAIL src/calc.test.ts > add",
     "AssertionError: expected 4 to be 5",
     "    at src/calc.test.ts:12:20",
     "    at Object.eq (/app/node_modules/expect/build/index.js:123:9)",

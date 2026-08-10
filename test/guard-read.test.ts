@@ -18,7 +18,7 @@ test.each([
   ["/proj/node_modules/lib/index.js", "node_modules"],
   ["/proj/dist/main.js", "dist"],
   ["/proj/.next/server/page.js", ".next"],
-])("deny file nhiễu: %s", (file_path) => {
+])("deny noise file: %s", (file_path) => {
   expect(checkNoisyRead({ file_path }, CFG)).not.toBeNull();
 });
 
@@ -42,7 +42,7 @@ test("a LARGE limit (>400) is not an escape hatch => still deny", () => {
   expect(checkNoisyRead({ file_path: "/proj/yarn.lock", limit: 1000 }, CFG)).not.toBeNull();
 });
 
-test("rule tắt (readNoise=false) => null", () => {
+test("rule disabled (readNoise=false) => null", () => {
   const off = { ...CFG, rules: { ...CFG.rules, readNoise: false } };
   expect(checkNoisyRead({ file_path: "/proj/package-lock.json" }, off)).toBeNull();
 });

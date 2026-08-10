@@ -101,7 +101,7 @@ export function renderCost(rows: Usage[], table: PricingTable): string {
   const kinds = [
     ["cache read ", t.cost.cacheRead, t.tokens.cacheRead, `${CACHE_READ_MULT}× input · the context re-read on EVERY turn`],
     ["cache write", t.cost.cacheWrite, t.tokens.cacheWrite, `${CACHE_WRITE_MULT}× input · once per token loaded`],
-    ["output     ", t.cost.output, t.tokens.output, "model tự viết ra"],
+    ["output     ", t.cost.output, t.tokens.output, "what the model writes"],
     ["fresh input", t.cost.input, t.tokens.input, "not cached yet"],
   ] as const;
 
@@ -110,7 +110,7 @@ export function renderCost(rows: Usage[], table: PricingTable): string {
     const pct = Math.round((c / t.total) * 100);
     lines.push(`  ${label} ${`$${c.toFixed(2)}`.padStart(10)} ${`${pct}%`.padStart(4)} · ${fmtTok(tok).padStart(6)} tok · ${note}`);
   }
-  lines.push("", "Theo model:");
+  lines.push("", "By model:");
   for (const m of t.byModel) {
     lines.push(`  ${`$${m.cost.toFixed(2)}`.padStart(10)} · ${fmtTok(m.tokens).padStart(6)} tok · ${m.model}`);
   }

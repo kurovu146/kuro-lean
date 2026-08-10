@@ -43,7 +43,7 @@ export function checkNoisyRead(
   else if (existsSync(fp)) {
     try {
       const size = statSync(fp).size;
-      if (size > cfg.maxReadKb * 1024) why = `file lớn ${Math.round(size / 1024)}KB (> ${cfg.maxReadKb}KB)`;
+      if (size > cfg.maxReadKb * 1024) why = `large file ${Math.round(size / 1024)}KB (> ${cfg.maxReadKb}KB)`;
     } catch {
       // couldn't stat it → skip
     }
