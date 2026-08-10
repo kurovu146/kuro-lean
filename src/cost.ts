@@ -50,7 +50,10 @@ export function tallyUsage(rows: Usage[], table: PricingTable): Tally {
   for (const r of rows) {
     const p = priceOf(r.model, table);
     if (!p) {
-      skipped.add(r.model);
+      // A row with zero tokens can't move the bill, so it can't represent a pricing gap either -
+      // Claude Code's own bookkeeping pseudo-models (e.g. "<synthetic>" on an interrupted turn) log
+      // exactly this shape, and flagging them forever would cry wolf on every real gap.
+      if (r.input + r.cacheWrite + r.cacheRead + r.output > 0) skipped.add(r.model);
       continue;
     }
     const c = {

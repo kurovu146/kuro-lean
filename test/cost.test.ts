@@ -43,6 +43,20 @@ test("tallyUsage skips a model missing from the price table without breaking the
   expect(t.skipped).toEqual(["mystery-model"]);
 });
 
+test("tallyUsage: a zero-token unpriced row is never flagged as skipped", () => {
+  // Claude Code logs its own bookkeeping under pseudo-models (e.g. "<synthetic>" on an interrupted
+  // turn) with all four token fields at 0. It can't move the bill, so it must not read as a pricing gap.
+  const t = tallyUsage(
+    [
+      { model: "claude-opus-5", input: 1_000_000, cacheWrite: 0, cacheRead: 0, output: 0 },
+      { model: "<synthetic>", input: 0, cacheWrite: 0, cacheRead: 0, output: 0 },
+    ],
+    P,
+  );
+  expect(t.total).toBeCloseTo(5, 5);
+  expect(t.skipped).toEqual([]);
+});
+
 test("renderCost: empty => a hint sentence, not an empty table", () => {
   expect(renderCost([], P)).toContain("no usage data yet");
 });
