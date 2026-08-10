@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="kt — kuro-lean">
+  <title>kt — squash the noise, keep the signal</title>
+
+  <!-- ground -->
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <rect x="14" y="14" width="484" height="484" rx="99" fill="#101A2B"/>
+  <rect x="14.5" y="14.5" width="483" height="483" rx="98.5" fill="none" stroke="#22D3EE" stroke-opacity="0.22"/>
+
+  <!-- raw output collapsing: each line shorter and quieter than the one above -->
+  <g stroke="#64748B" stroke-width="14" stroke-linecap="round">
+    <line x1="108" y1="116" x2="404" y2="116" stroke-opacity="0.90"/>
+    <line x1="133" y1="146" x2="379" y2="146" stroke-opacity="0.68"/>
+    <line x1="160" y1="176" x2="352" y2="176" stroke-opacity="0.48"/>
+    <line x1="188" y1="206" x2="324" y2="206" stroke-opacity="0.30"/>
+  </g>
+
+  <!-- the signal that survives -->
+  <line x1="213" y1="244" x2="299" y2="244" stroke="#2DD4BF" stroke-width="18" stroke-linecap="round"/>
+
+  <!-- wordmark: drawn as strokes, so it never depends on a font being installed -->
+  <g stroke="#E6EDF3" stroke-width="21" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M173 296 V406"/>
+    <path d="M242 314 L173 356 L245 406"/>
+    <path d="M308 304 V384 q0 22 24 22"/>
+    <path d="M276 334 H340"/>
+  </g>
+</svg>
