@@ -101,6 +101,9 @@ export function installSettings(settingsPath: string, ktBin: string): { changed:
     backup = `${settingsPath}.bak`;
     copyFileSync(settingsPath, backup);
   }
+  // Install can legitimately come BEFORE Claude Code has ever run, so ~/.claude may not exist yet.
+  // Without this, a first-time user's very first command dies on a raw ENOENT from writeFileSync.
+  mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   return { changed: true, backup };
 }

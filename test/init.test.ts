@@ -18,6 +18,17 @@ test("empty settings => adds the hooks + statusLine", () => {
   expect(hooks).toContain("kt hook-compress");
 });
 
+test("no ~/.claude directory at all => creates it instead of crashing", () => {
+  // The first-run path for someone who installs kt before ever launching Claude Code. This used to
+  // die with a raw ENOENT from writeFileSync, exit 1, on the very first command they ran.
+  rmSync(DIR, { recursive: true, force: true });
+  const fresh = `${DIR}/.claude/settings.json`;
+  const r = installSettings(fresh, "kt");
+  expect(r.changed).toBe(true);
+  expect(r.backup).toBeUndefined(); // nothing existed to back up
+  expect(JSON.parse(readFileSync(fresh, "utf8")).statusLine.command).toContain("kt status");
+});
+
 test("registers the Read matcher => kt hook-guard (blocks noisy files)", () => {
   rmSync(DIR, { recursive: true, force: true });
   mkdirSync(DIR, { recursive: true });
