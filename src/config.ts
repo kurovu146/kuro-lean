@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import type { Profile } from "./detect";
 import type { GenericOpts } from "./compressors/types";
@@ -55,25 +56,45 @@ export const defaultConfig: Config = {
   },
 };
 
-export function loadConfig(cwd: string = process.cwd()): Config {
-  const path = join(cwd, "kt.json");
-  if (!existsSync(path)) return defaultConfig;
+/** Lay one user file over a config. Section-wise, so overriding one key never drops its siblings. */
+function mergeConfig(base: Config, user: Partial<Config>): Config {
+  return {
+    ...base,
+    ...user,
+    profiles: { ...base.profiles, ...user.profiles },
+    generic: { ...base.generic, ...user.generic },
+    limits: { ...base.limits, ...user.limits },
+    run: { ...base.run, ...user.run },
+    store: { ...base.store, ...user.store },
+    statusline: { ...base.statusline, ...user.statusline },
+    guard: { ...base.guard, ...user.guard, rules: { ...base.guard.rules, ...user.guard?.rules } },
+    promptGuard: { ...base.promptGuard, ...user.promptGuard },
+    pricing: { ...base.pricing, ...user.pricing },
+  };
+}
+
+/** Malformed JSON drops only THAT layer — a broken global must not cost you a valid project config. */
+function readLayer(path: string): Partial<Config> | null {
+  if (!existsSync(path)) return null;
   try {
-    const user = JSON.parse(readFileSync(path, "utf8")) as Partial<Config>;
-    return {
-      ...defaultConfig,
-      ...user,
-      profiles: { ...defaultConfig.profiles, ...user.profiles },
-      generic: { ...defaultConfig.generic, ...user.generic },
-      limits: { ...defaultConfig.limits, ...user.limits },
-      run: { ...defaultConfig.run, ...user.run },
-      store: { ...defaultConfig.store, ...user.store },
-      statusline: { ...defaultConfig.statusline, ...user.statusline },
-      guard: { ...defaultConfig.guard, ...user.guard, rules: { ...defaultConfig.guard.rules, ...user.guard?.rules } },
-      promptGuard: { ...defaultConfig.promptGuard, ...user.promptGuard },
-      pricing: { ...defaultConfig.pricing, ...user.pricing },
-    };
+    return JSON.parse(readFileSync(path, "utf8")) as Partial<Config>;
   } catch {
-    return defaultConfig;
+    return null;
   }
+}
+
+/**
+ * Three layers, lowest first: defaults < ~/.claude/kt.json < <project>/kt.json.
+ *
+ * The global layer is what lets a preference ("warn me after 30 min, not 60") hold everywhere
+ * without a file per repo. The project layer still wins, because things like a slow e2e suite's
+ * `run.timeoutMs` are a property of that repo, not of the machine.
+ */
+export function loadConfig(cwd: string = process.cwd(), home: string = homedir()): Config {
+  let cfg = defaultConfig;
+  for (const path of [join(home, ".claude", "kt.json"), join(cwd, "kt.json")]) {
+    const user = readLayer(path);
+    if (user) cfg = mergeConfig(cfg, user);
+  }
+  return cfg;
 }

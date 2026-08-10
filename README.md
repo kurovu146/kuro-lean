@@ -11,7 +11,7 @@ prompt cache has expired.
 [![CI](https://github.com/kurovu146/kuro-lean/actions/workflows/ci.yml/badge.svg)](https://github.com/kurovu146/kuro-lean/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black?logo=bun&logoColor=white)](https://bun.sh)
-![Tests](https://img.shields.io/badge/tests-256%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-260%20passing-brightgreen)
 ![Version](https://img.shields.io/badge/version-0.2.0-blue)
 
 **[Install](#install)** · **[Commands](#commands)** · **[Where the money goes](#where-the-money-goes)** · **[Benchmarks](#benchmarks)** · **[Configuration](#configuration)**
@@ -576,7 +576,20 @@ workload: `kt bench --runs 3`.
 
 ## Configuration
 
-Optional per-project `kt.json`, deep-merged over the defaults:
+**Config is entirely optional** — nothing generates a `kt.json`, and the defaults below are compiled
+into the binary. You only write one to override something. Three layers, lowest first:
+
+| Layer | File | For |
+|---|---|---|
+| 1 | built-in defaults | works everywhere with no file at all |
+| 2 | `~/.claude/kt.json` | your preferences, once, for every project |
+| 3 | `<project>/kt.json` | facts about *that* repo — a slow e2e suite's `run.timeoutMs` |
+
+Each layer is merged **section by section**, so overriding one key never drops its siblings. A global
+`{"promptGuard": {"idleMin": 30}}` keeps the default `minTokens`, and a project file that sets only
+`minTokens` keeps your global `idleMin`. A malformed file drops only its own layer.
+
+The full set of keys, with their default values:
 
 ```json
 {
@@ -618,7 +631,7 @@ Full logs live under `.kt/runs/` (last `keepRuns` kept) — already in `.gitigno
 
 ```bash
 bun install         # dev deps (typescript + @types/bun)
-bun test            # 256 tests across 26 files
+bun test            # 260 tests across 26 files
 bun run typecheck   # tsc --noEmit
 ```
 
