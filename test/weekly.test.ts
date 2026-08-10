@@ -32,6 +32,20 @@ test("cycleStart falls back when the config file is missing entirely", () => {
   expect(cycleStart(NOW, join(tmpdir(), "kt-no-such-config.json"))).toBe(NOW - WEEK_MS);
 });
 
+test("cycleStart falls back when the config is not valid JSON", () => {
+  const p = join(mkdtempSync(join(tmpdir(), "kt-cycle-bad-")), "claude.json");
+  writeFileSync(p, "{ cachedUsageUtilization: ");
+  expect(cycleStart(NOW, p)).toBe(NOW - WEEK_MS);
+});
+
+// ~/.claude.json is a cache Claude Code refetches on its own schedule, so across every weekly reset
+// it still holds the PREVIOUS week's `resets_at` until it catches up. Anchoring to an expired reset
+// totals a CLOSED week and prints it as this week's spend, with nothing on the line to say so.
+test("an expired resets_at is refused — a stale cache must not report a closed week", () => {
+  const p = configWith({ resets_at: new Date(NOW - 3 * 24 * 3600_000).toISOString() });
+  expect(cycleStart(NOW, p)).toBe(NOW - WEEK_MS);
+});
+
 test("formatWeekly prices the week and counts its tokens", () => {
   // 200M output on opus-5 at $25/1M = $5000 -> "$5.0k"; tokens 200M -> "200.0M"
   const rows = [row("claude-opus-5", { output: 200_000_000 })];

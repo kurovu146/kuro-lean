@@ -11,13 +11,20 @@ export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  * Deriving it from the real reset beats guessing a weekday — the reset can shift, and a hardcoded
  * "Friday 5am" is only ever right by luck. No cached utilization yet (fresh install) => a rolling
  * week, so the segment still renders on day one.
+ *
+ * A reset that has already PASSED is refused for the same reason. `~/.claude.json` is a cache Claude
+ * Code refetches on its own schedule, so it straddles every weekly boundary still holding the
+ * PREVIOUS week's `resets_at`: anchoring to it there totals a CLOSED week and prints it as this
+ * week's spend, with nothing on the line to say so — and the `📅` clock beside it has already
+ * dropped that same expired window, so the two disagree silently. The rolling week is at worst a few
+ * hours out of phase with the real one; a stale anchor is a whole week wrong.
  */
 export function cycleStart(now: number, configPath: string = join(homedir(), ".claude.json")): number {
   try {
     const resets = JSON.parse(readFileSync(configPath, "utf8"))
       ?.cachedUsageUtilization?.utilization?.seven_day?.resets_at;
     const t = resets ? Date.parse(resets) : NaN;
-    if (!Number.isNaN(t)) return t - WEEK_MS;
+    if (!Number.isNaN(t) && t > now) return t - WEEK_MS;
   } catch {}
   return now - WEEK_MS;
 }
