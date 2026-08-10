@@ -154,12 +154,17 @@ function jsonlFiles(dir: string): string[] {
   return out;
 }
 
+function tokensOf(r: Usage): number {
+  return r.input + r.cacheWrite + r.cacheRead + r.output;
+}
+
 /**
  * Pull usage rows out of one transcript's text. `since` (epoch ms, 0 = no window) drops entries
  * stamped before the window; an entry with no timestamp is kept, because dropping real usage is a
- * worse error than counting one line early.
+ * worse error than counting one line early. `seen` maps a reply's identity to its row's index in
+ * `out`, so a reply met again can be upgraded in place rather than appended or discarded.
  */
-function parseUsageInto(text: string, out: Usage[], since = 0, seen?: Set<string>): void {
+function parseUsageInto(text: string, out: Usage[], since = 0, seen?: Map<string, number>): void {
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let e: any;
@@ -171,32 +176,47 @@ function parseUsageInto(text: string, out: Usage[], since = 0, seen?: Set<string
     const u = e?.message?.usage;
     if (!u || typeof u !== "object") continue;
     if (since && e.timestamp && Date.parse(e.timestamp) < since) continue;
-    // One reply, billed once. Claude Code rewrites earlier messages into a new transcript whenever a
-    // session is resumed, forked or compacted, so the same reply sits on disk many times over -
-    // measured across one real quota week, 24,344 rows collapse to 9,711 and 57% of the tokens were
-    // repeats. A row with no identity is kept: counting an unidentifiable reply twice understates
-    // nothing, while dropping it would silently lower the bill.
-    const id = e.message?.id;
-    const req = e.requestId ?? e.request_id;
-    if (seen && id && req) {
-      const key = `${id}:${req}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-    }
-    out.push({
+    const row: Usage = {
       model: e.message.model ?? "?",
       input: u.input_tokens ?? 0,
       cacheWrite: u.cache_creation_input_tokens ?? 0,
       cacheRead: u.cache_read_input_tokens ?? 0,
       output: u.output_tokens ?? 0,
-    });
+    };
+    // One reply, billed once, at its FINAL size.
+    //
+    // The same reply reaches disk repeatedly for two different reasons, and they pull opposite ways.
+    // Claude Code rewrites earlier messages into a new transcript whenever a session is resumed,
+    // forked or compacted — those copies are identical, and counting them all inflated one measured
+    // quota week from 2.24B tokens to 5.24B. But a subagent turn is ALSO written progressively into
+    // its own transcript: a stub row first (a handful of output tokens), then the real total later
+    // under the same id. Keeping whichever copy arrived first therefore throws the real number away —
+    // measured 35% of all output tokens on this machine, nearly all of it in subagents/.
+    //
+    // Usage only ever grows within a turn, so the largest sighting is the finished one. Keying on
+    // max rather than first or last also makes the result independent of the order files are walked.
+    //
+    // A row with no identity is kept as its own: counting an unidentifiable reply twice overstates
+    // nothing that was not already on disk, while dropping it would silently lower the bill.
+    const id = e.message?.id;
+    const req = e.requestId ?? e.request_id;
+    if (seen && id && req) {
+      const key = `${id}:${req}`;
+      const at = seen.get(key);
+      if (at !== undefined) {
+        if (tokensOf(row) > tokensOf(out[at]!)) out[at] = row;
+        continue;
+      }
+      seen.set(key, out.length);
+    }
+    out.push(row);
   }
 }
 
 /** Read usage from the transcripts (including subagents). Corrupt lines and lines without usage are skipped. */
 export function collectUsage(dir: string): Usage[] {
   const rows: Usage[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   for (const f of jsonlFiles(dir)) {
     try {
       parseUsageInto(readFileSync(f, "utf8"), rows, 0, seen);
@@ -240,7 +260,7 @@ export function collectUsageSince(
   const rows: Usage[] = [];
   // Shared across every project: the same reply routinely appears in transcripts of DIFFERENT
   // projects, so a per-file set would miss most of the repeats.
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   for (const f of jsonlFiles(root)) {
     try {
       const st = statSync(f);

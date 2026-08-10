@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { priceOf, tallyUsage, renderCost, perTurnCost, collectUsageSince, fmtTok, MAX_TRANSCRIPT_BYTES, type Usage } from "../src/cost";
+import { priceOf, tallyUsage, renderCost, perTurnCost, collectUsage, collectUsageSince, fmtTok, MAX_TRANSCRIPT_BYTES, type Usage } from "../src/cost";
 import { defaultConfig } from "../src/config";
 
 const P = defaultConfig.pricing;
@@ -136,6 +136,52 @@ test("same message id, different requests => two real replies, both billed", () 
   );
 
   expect(collectUsageSince(0, root).length).toBe(2);
+});
+
+// A subagent turn's usage is written progressively into the SAME transcript: a stub row first
+// (stop_reason null, a handful of output tokens), then the real total later under the same
+// message.id + requestId. Keeping whichever arrived first throws the real number away - measured
+// 35% of output tokens across this machine's transcripts, almost all of it in subagents/*.jsonl.
+test("a reply resent with grown usage counts at its final size, not its stub", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-grow-"));
+  mkdirSync(join(root, "-proj"));
+  writeFileSync(
+    join(root, "-proj", "s.jsonl"),
+    [identifiedLine("2026-08-09T00:00:00Z", "msg_10", "req_10", 4),
+     identifiedLine("2026-08-09T00:00:09Z", "msg_10", "req_10", 60_945)].join("\n"),
+  );
+
+  const rows = collectUsageSince(0, root);
+
+  expect(rows.length).toBe(1);
+  expect(rows[0]!.output).toBe(60_945);
+});
+
+test("the final size wins even when the stub is in a different transcript", () => {
+  const root = mkdtempSync(join(tmpdir(), "kt-grow2-"));
+  mkdirSync(join(root, "-proj-a"));
+  mkdirSync(join(root, "-proj-b"));
+  writeFileSync(join(root, "-proj-a", "later.jsonl"), identifiedLine("2026-08-09T00:00:09Z", "msg_11", "req_11", 5_000));
+  writeFileSync(join(root, "-proj-b", "stub.jsonl"), identifiedLine("2026-08-09T00:00:00Z", "msg_11", "req_11", 2));
+
+  const rows = collectUsageSince(0, root);
+
+  expect(rows.length).toBe(1);
+  expect(rows[0]!.output).toBe(5_000);
+});
+
+test("collectUsage dedupes too - kt cost reads the same transcripts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kt-cost-dedupe-"));
+  writeFileSync(
+    join(dir, "s.jsonl"),
+    [identifiedLine("2026-08-09T00:00:00Z", "msg_12", "req_12", 3),
+     identifiedLine("2026-08-09T00:00:09Z", "msg_12", "req_12", 900)].join("\n"),
+  );
+
+  const rows = collectUsage(dir);
+
+  expect(rows.length).toBe(1);
+  expect(rows[0]!.output).toBe(900);
 });
 
 test("rows without an id are never collapsed into each other", () => {
