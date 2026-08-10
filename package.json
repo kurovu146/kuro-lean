@@ -2,9 +2,39 @@
   "name": "kuro-lean",
   "version": "0.2.0",
   "license": "MIT",
+  "description": "Cuts the token bill of AI coding agents: compresses shell output, blocks token-hungry calls before they run, prices your session, and rescues sessions whose prompt cache expired.",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "ai-agent",
+    "llm",
+    "tokens",
+    "token-optimization",
+    "context-window",
+    "cost",
+    "cli",
+    "bun"
+  ],
+  "homepage": "https://github.com/kurovu146/kuro-lean#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kurovu146/kuro-lean.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kurovu146/kuro-lean/issues"
+  },
   "type": "module",
   "bin": {
     "kt": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3"
   },
   "scripts": {
     "test": "bun test",

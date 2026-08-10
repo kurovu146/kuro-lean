@@ -61,12 +61,31 @@ It works in two layers:
 **Requires** [Bun](https://bun.sh) ≥ 1.3 (the entry point is `src/cli.ts`, run directly by Bun).
 
 ```bash
+bun add -g kuro-lean   # installs the `kt` binary
+kt init                # (Claude Code) register the hooks + status line
+kt doctor              # verify the setup
+```
+
+No build step — `kt` runs the TypeScript directly under Bun.
+
+<details>
+<summary><b>Other ways to install</b></summary>
+
+```bash
+# straight from GitHub, no npm involved
+bun add -g github:kurovu146/kuro-lean
+
+# from source, for hacking on it
 git clone https://github.com/kurovu146/kuro-lean.git && cd kuro-lean
 bun install
-bun link            # put `kt` on your PATH
-kt init             # (Claude Code) register the hooks + status line
-kt doctor           # verify the setup
+bun link               # puts your working copy on PATH as `kt`
 ```
+
+To remove it: `bun remove -g kuro-lean`. That leaves your Claude Code settings alone — the hook
+entries `kt init` added stay in `~/.claude/settings.json` until you delete them, and a `.bak` from
+before the install is sitting next to it.
+
+</details>
 
 ```console
 $ kt doctor
@@ -158,16 +177,19 @@ where the money actually goes — usually not the same place.
 
 ```console
 $ kt cost
-Cost derived from real usage · total ~$557.52
+Cost derived from real usage · total ~$92.31
 
-  cache read     $211.82  38% · 423.6M tok · 0.1× input · the context re-read on EVERY turn
-  cache write    $200.46  36% ·  20.0M tok · 2× input · once per token loaded
-  output         $145.19  26% ·   5.8M tok · what the model writes
-  fresh input      $0.04   0% ·     9k tok · not cached yet
+  cache read      $35.30  38% ·  70.6M tok · 0.1× input · the context re-read on EVERY turn
+  cache write     $33.00  36% ·   3.3M tok · 2× input · once per token loaded
+  output          $24.00  26% ·  0.96M tok · what the model writes
+  fresh input      $0.01   0% ·     2k tok · not cached yet
 
 By model:
-     $557.52 · 449.5M tok · claude-opus-5
+      $92.31 · 74.9M tok · claude-opus-5
 ```
+
+*(Sample figures, real proportions — the 38/36/26 split is the measured one, see
+[Where the money goes](#where-the-money-goes). Run it on your own project for your own numbers.)*
 
 Read from the Claude Code transcripts for this project (main session **and** subagents). Prices
 come from `pricing` in `kt.json`, matched by model-id prefix; a model with no entry is skipped
@@ -374,10 +396,10 @@ An out-of-range number is an error, never a guess at some other session.
 $ kt handoff --list
   #  idle      context     reload    session
   1  0m          68k tok   $0.68     ~/Dev/kuro-lean (main)
-  2  3m         240k tok   $2.40     ~/Dev/vnarena (HEAD)
-  3  8m         283k tok   $2.83     ~/Dev/vnarena/be (main)
-  4  13m        359k tok   $3.59     ~/Dev/vnarena (HEAD)
-  5  25m        301k tok   $3.01     ~/Dev/vnarena (HEAD)
+  2  3m         240k tok   $2.40     ~/Dev/storefront (HEAD)
+  3  8m         283k tok   $2.83     ~/Dev/storefront/api (main)
+  4  13m        359k tok   $3.59     ~/Dev/storefront (feat/checkout)
+  5  25m        301k tok   $3.01     ~/Dev/analytics (main)
 
   → kt handoff --recover --from <#> > rescue.md
 ```
@@ -601,6 +623,24 @@ bun run typecheck   # tsc --noEmit
 ```
 
 CI (GitHub Actions) runs typecheck + tests on every push and PR to `main`.
+
+## Credits
+
+The core mechanism — intercept the shell command, compress its output before it ever reaches the
+model's context — comes from **[rtk](https://github.com/rtk-ai/rtk)**, a single Rust binary that
+does this across 100+ commands. If you want the fast, language-agnostic version of this idea, use
+rtk; it is the more mature tool and it is not Claude Code–specific.
+
+kt started as a Bun/TypeScript reimplementation of that idea and then went somewhere else: deeper
+Claude Code integration (`PreToolUse` and `UserPromptSubmit` hooks, a status line, the noisy-`Read`
+guard), cost accounting from the transcripts, session rescue after cache expiry — and a different
+default, since measuring showed that compressing *small* outputs costs more in extra agent turns
+than it saves.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: measure your claims, and `bun test` has
+to be green. Security issues go through [SECURITY.md](SECURITY.md), not a public issue.
 
 ## License
 
