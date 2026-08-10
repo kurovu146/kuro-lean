@@ -52,11 +52,11 @@ export const WEEKLY_TTL_MS = 10 * 60 * 1000;
 /** A lock older than this belongs to a process that died mid-scan. */
 const LOCK_STALE_MS = 120 * 1000;
 
-export function weeklyCachePath(dir: string = tmpdir()): string {
+export function weeklyCachePath(dir: string = process.env.KT_TMPDIR || tmpdir()): string {
   return join(dir, "kt-weekly.json");
 }
 
-export function weeklyLockPath(dir: string = tmpdir()): string {
+export function weeklyLockPath(dir: string = process.env.KT_TMPDIR || tmpdir()): string {
   return join(dir, "kt-weekly.lock");
 }
 
@@ -98,7 +98,8 @@ export function refreshWeekly(
   paths: { root?: string; configPath?: string; cachePath?: string },
   table: PricingTable,
 ): void {
-  const rows = collectUsageSince(cycleStart(now, paths.configPath), paths.root);
+  const root = paths.root ?? process.env.KT_PROJECTS_ROOT ?? undefined;
+  const rows = collectUsageSince(cycleStart(now, paths.configPath), root);
   const line = formatWeekly(rows, table);
   const cachePath = paths.cachePath ?? weeklyCachePath();
   const tmp = `${cachePath}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;

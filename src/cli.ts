@@ -5,6 +5,7 @@ import { showRun, readMeta } from "./store";
 import { renderStats } from "./stats";
 import { renderCost, collectUsage, transcriptDir } from "./cost";
 import { handoffPrompt } from "./handoff";
+import { acquireLock, readWeekly, refreshWeekly, releaseLock, weeklyCachePath, weeklyLockPath } from "./weekly";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
@@ -132,6 +133,22 @@ async function main() {
       process.stdout.write(renderCost(collectUsage(dir), config.pricing));
       return;
     }
+    case "weekly": {
+      const now = Date.now();
+      if (rest.includes("--refresh")) {
+        const lock = weeklyLockPath();
+        if (!acquireLock(now, lock)) return;   // another refresh already running
+        try {
+          refreshWeekly(now, { cachePath: weeklyCachePath() }, config.pricing);
+        } finally {
+          releaseLock(lock);
+        }
+        return;
+      }
+      const { line } = readWeekly(now);
+      if (line) process.stdout.write(line + "\n");
+      return;
+    }
     case "hook-compress": {
       let input: any;
       try { input = JSON.parse((await readStdin()) || "{}"); }
@@ -222,7 +239,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write("kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|hook-prompt|show|doctor|bench>\n");
+      process.stdout.write("kt <run|status|stats|cost|weekly|handoff|init|hook-compress|hook-guard|hook-prompt|show|doctor|bench>\n");
   }
 }
 
