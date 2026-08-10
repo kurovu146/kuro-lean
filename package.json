@@ -1,6 +1,7 @@
 {
   "name": "kuro-lean",
   "version": "0.2.0",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "kt": "./src/cli.ts"
