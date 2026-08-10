@@ -127,7 +127,7 @@ The two installed skills trim the model's *own* output, which is the most expens
 ## Commands
 
 ```
-kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|hook-prompt|show|doctor|bench>
+kt <run|status|stats|cost|weekly|handoff|init|hook-compress|hook-guard|hook-prompt|show|doctor|bench>
 ```
 
 | Command | What it does |
@@ -136,6 +136,7 @@ kt <run|status|stats|cost|handoff|init|hook-compress|hook-guard|hook-prompt|show
 | `kt show [id]` | View the full log (latest run if no id) |
 | [`kt stats`](#kt-stats) | Savings report from your real usage |
 | [`kt cost [dir]`](#kt-cost) | The actual bill, from `usage` in this project's transcripts |
+| [`kt weekly`](#status-line) | Print the cached weekly-spend line (`--refresh` rescans now) |
 | [`kt handoff`](#kt-handoff--rescuing-a-session) | Distil a session so tomorrow starts light |
 | [`kt handoff --recover`](#kt-handoff--rescuing-a-session) | Rebuild a session whose cache is already dead |
 | [`kt handoff --list`](#kt-handoff---list) | Every abandoned session on the machine, ranked |
@@ -469,9 +470,9 @@ then send another.
 `kt status` reads Claude Code's JSON on stdin and renders three lines:
 
 ```
-🟢 Opus 5 (1M context) · ▰▰▰▱▱▱▱▱▱▱ 32% · ~320k tok · ⏳ 2h 15m left · 📅 3d 14h left · $12.40 · $1.60/turn · ❄️ 2h15 · reload ~$5.00
+🟢 Opus 5 (1M context) · ▰▰▰▱▱▱▱▱▱▱ 32% · ~320k tok · $12.40 · $1.60/turn · ❄️ 2h15 · reload ~$5.00
 📁 ~/Dev/kuro-lean · 🌿 main ↑2 · 📋 refactor sessions
-📝 +142 -37 · ✅ 3/7 · 🔧 18 tools · ♻️ ~15k saved · 📅 3d 14h left · 💵 wk $1.7k 2.7B
+📝 +142 -37 · ✅ 3/7 · 🔧 18 tools · ♻️ ~15k saved · ⏳ 2h 15m left · 📅 3d 14h left · 💵 wk $1.7k 2.7B
 ```
 
 | Segment | Meaning |
