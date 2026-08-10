@@ -85,6 +85,20 @@ function readLayer(path: string): Partial<Config> | null {
 }
 
 /**
+ * The machine-wide layers alone: defaults < ~/.claude/kt.json.
+ *
+ * For work whose RESULT is machine-wide rather than project-scoped. The week's usage roll-up is the
+ * case that needs it: it spans every project on the machine and lands in one cache file in the temp
+ * dir, so pricing it from the current directory's kt.json makes the same week read differently
+ * depending on which repo the background refresh happened to fire from. Only a layer that is itself
+ * machine-wide may price a machine-wide number.
+ */
+export function loadGlobalConfig(home: string = homedir()): Config {
+  const user = readLayer(join(home, ".claude", "kt.json"));
+  return user ? mergeConfig(defaultConfig, user) : defaultConfig;
+}
+
+/**
  * Three layers, lowest first: defaults < ~/.claude/kt.json < <project>/kt.json.
  *
  * The global layer is what lets a preference ("warn me after 30 min, not 60") hold everywhere
@@ -92,10 +106,7 @@ function readLayer(path: string): Partial<Config> | null {
  * `run.timeoutMs` are a property of that repo, not of the machine.
  */
 export function loadConfig(cwd: string = process.cwd(), home: string = homedir()): Config {
-  let cfg = defaultConfig;
-  for (const path of [join(home, ".claude", "kt.json"), join(cwd, "kt.json")]) {
-    const user = readLayer(path);
-    if (user) cfg = mergeConfig(cfg, user);
-  }
-  return cfg;
+  const cfg = loadGlobalConfig(home);
+  const user = readLayer(join(cwd, "kt.json"));
+  return user ? mergeConfig(cfg, user) : cfg;
 }

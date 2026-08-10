@@ -5,7 +5,7 @@ import { showRun, readMeta } from "./store";
 import { renderStats } from "./stats";
 import { renderCost, collectUsage, transcriptDir } from "./cost";
 import { handoffPrompt } from "./handoff";
-import { acquireLock, readWeekly, refreshWeekly, releaseLock, weeklyCachePath, weeklyLockPath } from "./weekly";
+import { readWeekly, runWeeklyRefresh } from "./weekly";
 import { decideCompress } from "./hooks/compress";
 import { decideGuard, checkNoisyRead } from "./hooks/guard";
 import { loadConfig } from "./config";
@@ -136,13 +136,9 @@ async function main() {
     case "weekly": {
       const now = Date.now();
       if (rest.includes("--refresh")) {
-        const lock = weeklyLockPath();
-        if (!acquireLock(now, lock)) return;   // another refresh already running
-        try {
-          refreshWeekly(now, { cachePath: weeklyCachePath() }, config.pricing);
-        } finally {
-          releaseLock(lock);
-        }
+        // Deliberately NOT `config.pricing`: this rolls up every project into one machine-wide cache,
+        // so it is priced from the global layers alone. See runWeeklyRefresh.
+        runWeeklyRefresh(now);
         return;
       }
       const { line } = readWeekly(now);

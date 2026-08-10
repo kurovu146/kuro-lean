@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { acquireLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
+import { acquireLock, cycleStart, formatWeekly, readWeekly, refreshWeekly, releaseLock, runWeeklyRefresh, WEEK_MS, WEEKLY_TTL_MS } from "../src/weekly";
 import type { Usage } from "../src/cost";
 
 const NOW = Date.parse("2026-08-10T08:00:00Z");
@@ -151,6 +151,66 @@ test("refreshWeekly's atomic write leaves no temp file behind", () => {
   // The write goes to a private temp file next to the cache, then a rename swaps it into place — if
   // that rename is ever dropped, a stray "kt-weekly.json.tmp-..." would be left sitting next to it.
   expect(readdirSync(dirname(cachePath))).toEqual(["kt-weekly.json"]);
+});
+
+/** A fake home carrying ~/.claude/kt.json, so the global config layer is a fixture, never the machine's. */
+function homeWith(pricing: unknown): string {
+  const home = mkdtempSync(join(tmpdir(), "kt-whome-"));
+  mkdirSync(join(home, ".claude"));
+  writeFileSync(join(home, ".claude", "kt.json"), JSON.stringify({ pricing }));
+  return home;
+}
+
+/** A projects root holding one transcript: 200M output tokens on opus-5, inside the window. */
+function rootWithUsage(): string {
+  const root = mkdtempSync(join(tmpdir(), "kt-wrun-"));
+  mkdirSync(join(root, "-proj"));
+  writeFileSync(
+    join(root, "-proj", "s.jsonl"),
+    JSON.stringify({
+      timestamp: "2026-08-09T00:00:00Z",
+      message: { model: "claude-opus-5", usage: { input_tokens: 0, output_tokens: 200_000_000 } },
+    }),
+  );
+  return root;
+}
+
+test("runWeeklyRefresh prices the week from the global config layer", () => {
+  // $50/1M output is nobody's default - reading it back proves ~/.claude/kt.json was consulted, and
+  // that the number did not just fall out of defaultConfig.
+  const home = homeWith({ "claude-opus-5": { input: 5, output: 50 } });
+  const cachePath = join(mkdtempSync(join(tmpdir(), "kt-wrunout-")), "kt-weekly.json");
+
+  runWeeklyRefresh(NOW, {
+    root: rootWithUsage(),
+    configPath: join(tmpdir(), "kt-none-run.json"),
+    cachePath,
+    lockPath: join(mkdtempSync(join(tmpdir(), "kt-wrunlock-")), "lock"),
+    home,
+  });
+
+  expect(JSON.parse(readFileSync(cachePath, "utf8")).line).toBe("💵 wk $10.0k 200.0M");
+});
+
+test("runWeeklyRefresh declines while another refresh holds the lock", () => {
+  const home = homeWith({ "claude-opus-5": { input: 5, output: 50 } });
+  const cachePath = join(mkdtempSync(join(tmpdir(), "kt-wrunout2-")), "kt-weekly.json");
+  const lockPath = join(mkdtempSync(join(tmpdir(), "kt-wrunlock2-")), "lock");
+  mkdirSync(lockPath); // a scan already in flight
+
+  runWeeklyRefresh(NOW, { root: rootWithUsage(), configPath: join(tmpdir(), "kt-none-run2.json"), cachePath, lockPath, home });
+
+  expect(existsSync(cachePath)).toBe(false); // nothing scanned, nothing written
+});
+
+test("runWeeklyRefresh releases the lock for the next refresh", () => {
+  const home = homeWith({ "claude-opus-5": { input: 5, output: 50 } });
+  const cachePath = join(mkdtempSync(join(tmpdir(), "kt-wrunout3-")), "kt-weekly.json");
+  const lockPath = join(mkdtempSync(join(tmpdir(), "kt-wrunlock3-")), "lock");
+
+  runWeeklyRefresh(NOW, { root: rootWithUsage(), configPath: join(tmpdir(), "kt-none-run3.json"), cachePath, lockPath, home });
+
+  expect(existsSync(lockPath)).toBe(false);
 });
 
 test("refreshWeekly cleans up its temp file when the final rename fails", () => {

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { loadConfig, defaultConfig } from "../src/config";
+import { loadConfig, loadGlobalConfig, defaultConfig } from "../src/config";
 
 const ROOT = "/tmp/kt-test-config";
 const DIR = join(ROOT, "project");
@@ -77,6 +77,23 @@ test("global and project merge per section, not whole-file", () => {
   expect(c.promptGuard.idleMin).toBe(30); // survives from the global layer
   expect(c.promptGuard.minTokens).toBe(1_000); // set by the project
   expect(c.run.timeoutMs).toBe(300_000); // untouched section still comes from global
+});
+
+// The week's roll-up is machine-wide and cached once per machine, so it must be priced without the
+// project layer - otherwise the same week reads differently depending on which repo you sat in.
+test("loadGlobalConfig keeps the global layer and ignores the project one entirely", () => {
+  setup();
+  globalCfg({ pricing: { "claude-opus-5": { input: 5, output: 25 } } });
+  project({ pricing: { "claude-opus-5": { input: 999, output: 999 } } });
+  expect(loadGlobalConfig(HOME).pricing["claude-opus-5"]).toEqual({ input: 5, output: 25 });
+  // ...while the ordinary loader, sitting in that same project, does take the override
+  expect(loadConfig(DIR, HOME).pricing["claude-opus-5"]).toEqual({ input: 999, output: 999 });
+});
+
+test("loadGlobalConfig with no global file at all => plain defaults", () => {
+  setup();
+  project({ pricing: { "claude-opus-5": { input: 999, output: 999 } } });
+  expect(loadGlobalConfig(HOME).pricing).toEqual(defaultConfig.pricing);
 });
 
 test("a malformed global is ignored without costing the project its config", () => {

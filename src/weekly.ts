@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
+import { loadGlobalConfig } from "./config";
 import { collectUsageSince, fmtTok, tallyUsage, type PricingTable, type Usage } from "./cost";
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -164,4 +165,27 @@ export function releaseLock(lockDir: string): void {
   try {
     rmSync(lockDir, { recursive: true, force: true });
   } catch {}
+}
+
+/**
+ * The whole `kt weekly --refresh` command: take the de-duplication lock, rescan, write the cache.
+ *
+ * Pricing comes from the GLOBAL layers only — see `loadGlobalConfig`. This roll-up covers every
+ * project and is cached once per machine, so the current directory's `kt.json` must not reach it: the
+ * same week used to render `$?` from one repo and `$0.0` from another, flipping every TTL.
+ *
+ * Every path, including the home the config layers are read from, is injectable — the whole command
+ * is driveable in-process, so its test never reads the machine's real `~/.claude.json` or temp dir.
+ */
+export function runWeeklyRefresh(
+  now: number,
+  paths: { root?: string; configPath?: string; cachePath?: string; lockPath?: string; home?: string } = {},
+): void {
+  const lock = paths.lockPath ?? weeklyLockPath();
+  if (!acquireLock(now, lock)) return; // another refresh is already scanning
+  try {
+    refreshWeekly(now, paths, loadGlobalConfig(paths.home).pricing);
+  } finally {
+    releaseLock(lock);
+  }
 }
