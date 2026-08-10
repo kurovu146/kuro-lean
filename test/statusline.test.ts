@@ -355,6 +355,25 @@ test("under a day left => hours, not '0d'", () => {
   expect(readQuota(NOW, p)).toBe("📅 12h 30m left");
 });
 
+// NaN fails EVERY comparison, so an unparseable reset used to slip past the `ms < 0` guard AND both
+// hour branches, landing in the days branch: "📅 NaNd NaNh left" on the status line.
+test("an unparseable resets_at hides the window instead of rendering NaN", () => {
+  const p = writeQuotaFixture("nan", { seven_day: { utilization: 36, resets_at: "not-a-date" } });
+  expect(readQuota(NOW, p)).toBeNull();
+});
+
+// A number where a timestamp belongs parses as a YEAR: Date.parse(12345) => year 12345 => "3768715d
+// 5h left". Not a window, a parse accident - and no less garbage for being finite.
+test("an absurd resets_at is dropped too, not printed as a million-day countdown", () => {
+  const p = writeQuotaFixture("absurd", { seven_day: { utilization: 36, resets_at: 12345 } });
+  expect(readQuota(NOW, p)).toBeNull();
+});
+
+test("a window inside the guard's range still renders — the guard is not swallowing real ones", () => {
+  const p = writeQuotaFixture("inrange", { seven_day: { utilization: 36, resets_at: "2026-08-13T22:00:00Z" } });
+  expect(readQuota(NOW, p)).toBe("📅 3d 14h left");
+});
+
 test("no config / no cached usage => null, nothing rendered", () => {
   expect(readQuota(NOW, join(tmpdir(), "kt-quota-test-missing.json"))).toBeNull();
   expect(readQuota(NOW, writeQuotaFixture("empty", {}))).toBeNull();

@@ -298,8 +298,16 @@ export function parseTranscript(transcriptPath?: string): { tools: number; todos
   return { tools, todos };
 }
 
+// Longest countdown that can be a real quota window. Claude Code caches a 5-hour and a 7-day one;
+// anything past a quarter is not a window but a mis-parse — `resets_at: 12345` makes Date.parse read
+// "year 12345", which is finite, positive, and 3,768,715 days long.
+const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
 function fmtMsLeft(ms: number): string {
-  if (ms < 0) return "";
+  // Both ends are checked BEFORE the branches, because NaN fails every comparison there is: `ms < 0`
+  // was false for it, so was `m < 60` and `h < 24`, and it fell through to the days branch and
+  // rendered "NaNd NaNh left". Garbage must hide the segment, never print it.
+  if (!Number.isFinite(ms) || ms < 0 || ms > MAX_WINDOW_MS) return "";
   const m = Math.floor(ms / 60000);
   if (m < 60) return `${m}m left`;
   const h = Math.floor(m / 60);
