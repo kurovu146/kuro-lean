@@ -18,10 +18,11 @@ const HEAD_BYTES = 16_000;
 const TAIL_BYTES = 64_000;
 
 /**
- * How many rows the table holds, for BOTH `--list` and the lookup behind `--recover --from <#>`.
- * One constant on purpose: when the two were 10 and 20, row 7 on screen and row 7 in the rescue were
- * different sessions. It also has to clear the number of sessions actually kept open at once — at 10,
- * a live 585k-token session sat at row 13 and looked like it had been dropped.
+ * The default row count, for BOTH `--list` and the lookup behind `--recover --from <#>`. One constant
+ * on purpose: when the two were 10 and 20, row 7 on screen and row 7 in the rescue were different
+ * sessions. It also has to clear the number of sessions actually kept open at once — at 10, a live
+ * 585k-token session sat at row 13 and looked like it had been dropped. `--list N` may ask for more,
+ * and the lookup then grows to match the row (see fromLimit) rather than losing sight of it.
  */
 export const LIST_LIMIT = 20;
 
@@ -187,13 +188,25 @@ export function renderSessions(rows: SessionRow[], pricing: PricingTable, home: 
   return out.join("\n") + "\n";
 }
 
+/** Is this `--from` a row number off the table, rather than a path? One rule, three callers. */
+export function isRowNumber(arg: string): boolean {
+  return /^\d+$/.test(arg.trim());
+}
+
+/**
+ * `--from <#>`: how many rows the lookup table must hold to contain the row asked for. `--list N`
+ * prints as many rows as you ask it to, so the number read off the screen can sit past LIST_LIMIT —
+ * resolving it against 20 rows reported row 31 as an unreadable number. Widening is safe precisely
+ * because the ranking is the EXACT top-N: row 31 of a 31-row table is row 31 of the 40-row one.
+ */
+export function fromLimit(arg: string): number {
+  return isRowNumber(arg) ? Math.max(LIST_LIMIT, Number(arg.trim())) : LIST_LIMIT;
+}
+
 /** `--from`: a row number from the table, or a path outright. null = not understood → don't guess. */
 export function resolveFrom(rows: SessionRow[], arg: string): string | null {
   const s = arg.trim();
-  if (/^\d+$/.test(s)) {
-    const i = Number(s) - 1;
-    return rows[i]?.path ?? null;
-  }
+  if (isRowNumber(s)) return rows[Number(s) - 1]?.path ?? null;
   return s.includes("/") ? s : null;
 }
 

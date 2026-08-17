@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCommand, LIST_LIMIT, listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
+import { clipboardCommand, fromLimit, LIST_LIMIT, listSessions, parseHandoffArgs, renderSessions, resolveFrom } from "../src/sessions";
 import { defaultConfig } from "../src/config";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "kt-sessions-"));
@@ -199,6 +199,15 @@ test("--from accepts a path outright, no table lookup needed", () => {
 
 test("--from pointing outside the table => null, never guess at a session", () => {
   expect(resolveFrom(rows, "9")).toBeNull();
+});
+
+test("--from <#> sizes the lookup table to hold the row asked for", () => {
+  // `--list 40` prints 40 rows; resolving row 31 against a table of 20 found nothing and reported it
+  // as an unreadable number. The ranking is the exact top-N, so a wider table still shows row 31 the
+  // same session it printed.
+  expect(fromLimit("31")).toBe(31);
+  expect(fromLimit("7")).toBe(LIST_LIMIT); // never SMALLER than the printed default, or row 7 moves
+  expect(fromLimit("/p/x.jsonl")).toBe(LIST_LIMIT); // a path needs no table at all
 });
 
 // ---- command-line flags ----

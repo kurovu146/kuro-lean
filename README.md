@@ -389,7 +389,8 @@ If it doesn't know your platform's clipboard command it says so instead of faili
 `--from` takes a row number from `--list`, or a path outright, so the repo you happen to be standing
 in stops mattering. Plain `--recover` takes the newest transcript of the current directory — which
 is very often the session you just opened to run a command, burying the one you actually wanted.
-An out-of-range number is an error, never a guess at some other session.
+A number past the last row is an error naming how many rows there are, never a guess at some other
+session.
 
 ### `kt handoff --list`
 
@@ -425,7 +426,9 @@ parks an auto-generated session title in `agentName`, so filtering on that hides
 
 **`N` defaults to 20**, the same number `--from <#>` resolves against — kept as one constant so a row
 number can never mean two different things, and high enough that a live session doesn't fall off the
-end (at 10, a 585k-token session still open in another pane sat at row 13 and looked deleted).
+end (at 10, a 585k-token session still open in another pane sat at row 13 and looked deleted). Ask
+`--list` for more and `--from` follows: it rebuilds the table big enough to hold the row you read,
+which shows the same session because the ranking is the exact top-N either way.
 
 **It is fast.** On a real machine (913 transcripts, 885 above the size floor) it runs in **0.02 s**.
 `stat()` filters first, then the ranking walks newest-mtime first and stops as soon as the remaining

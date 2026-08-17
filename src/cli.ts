@@ -54,7 +54,7 @@ async function main() {
       return;
     }
     case "handoff": {
-      const { clipboardCommand, LIST_LIMIT, listSessions, parseHandoffArgs, renderSessions, resolveFrom } =
+      const { clipboardCommand, fromLimit, isRowNumber, listSessions, parseHandoffArgs, renderSessions, resolveFrom } =
         await import("./sessions");
       const args = parseHandoffArgs(rest);
       const projectsRoot = join(homedir(), ".claude", "projects");
@@ -103,10 +103,17 @@ async function main() {
         // very often the session just opened to run a command, which buries the one that has the work.
         let file: string | null;
         if (args.from) {
-          const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: LIST_LIMIT });
+          // Sized to the row asked for, not to the printed default: `--list 40` shows rows the
+          // default table cannot reach, and telling the human their own row number is unreadable
+          // is the one answer that helps nobody.
+          const rows = listSessions(projectsRoot, { minBytes: MIN_SESSION_BYTES, limit: fromLimit(args.from) });
           file = resolveFrom(rows, args.from);
           if (!file) {
-            process.stderr.write(`kt: could not understand --from ${args.from} (see \`kt handoff --list\`)\n`);
+            process.stderr.write(
+              isRowNumber(args.from)
+                ? `kt: --from ${args.from} is past the end of the table — only ${rows.length} session${rows.length === 1 ? "" : "s"} found (see \`kt handoff --list\`)\n`
+                : `kt: could not understand --from ${args.from} (see \`kt handoff --list\`)\n`,
+            );
             process.exit(1);
           }
         } else {
